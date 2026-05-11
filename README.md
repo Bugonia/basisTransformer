@@ -34,6 +34,29 @@ h_next = h + Attn(FFN(h))
 h_next = h + Attn(h) + FFN(h)
 ```
 
+`standard_fa`
+
+```text
+u = h + FFN(h)
+h_next = u + Attn(u)
+```
+
+`block_af_carry`
+
+```text
+a_l = Attn_l(h_l)
+a_prev = Attn_l(h_{l-1})
+h_{l+1} = h_l + FFN_l(a_l + a_prev)
+```
+
+`block_fa_carry`
+
+```text
+f_l = FFN_l(h_l)
+f_prev = FFN_l(h_{l-1})
+h_{l+1} = h_l + Attn_l(f_l + f_prev)
+```
+
 Use `--norm none` to run the raw no-LayerNorm stress test. The recommended
 comparison starts with the default `--norm pre`, because that is closer to
 modern decoder-only Transformers.
@@ -228,6 +251,82 @@ Summarize and plot:
 .venv_cu128/bin/python plot_results_svg.py \
   "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
   --output "reports/${BASE_RUN}.svg"
+```
+
+## Basis Suite
+
+The new basis-focused suite drops `parallel` and compares:
+
+```text
+standard        Standard AF Transformer
+standard_fa     Standard FA Transformer
+block_af_carry  Block-level AF with attention-basis carry
+block_fa_carry  Block-level FA with FFN-basis carry
+```
+
+In code, `--variant basis` expands to those four variants. The carry variants
+use Pre-LN by default:
+
+```text
+block_af_carry:
+a_l = Attn_l(LN(h_l))
+a_prev = Attn_l(LN(h_{l-1}))
+h_{l+1} = h_l + FFN_l(LN(a_l + a_prev))
+
+block_fa_carry:
+f_l = FFN_l(LN(h_l))
+f_prev = FFN_l(LN(h_{l-1}))
+h_{l+1} = h_l + Attn_l(LN(f_l + f_prev))
+```
+
+For the first block, `h_{l-1}` is treated as a zero tensor. The carry variants
+use the same Attention or FFN weights for the current and previous-state branch,
+so parameter counts stay matched, but each carry block does roughly twice the
+Attention or FFN compute for that submodule.
+
+For multi-GPU runs, launch each variant separately so all GPUs are used:
+
+```bash
+BASE_RUN=enwik8_basis_8l_512d_ctx512_bs256_lr2e4_test005_30k
+mkdir -p runs
+
+for seed in 1 2; do
+  for variant in standard standard_fa block_af_carry block_fa_carry; do
+    gpu=$(( (seed - 1) * 4 ))
+    case "$variant" in
+      standard) offset=0 ;;
+      standard_fa) offset=1 ;;
+      block_af_carry) offset=2 ;;
+      block_fa_carry) offset=3 ;;
+    esac
+    gpu=$(( gpu + offset ))
+
+    CUDA_VISIBLE_DEVICES=$gpu .venv_cu128/bin/python train_block_residuals.py \
+      --data-file data/enwik8.txt \
+      --encoding latin-1 \
+      --variant "$variant" \
+      --run-name "${BASE_RUN}_seed${seed}_${variant}" \
+      --seed "$seed" \
+      --max-iters 30000 \
+      --eval-interval 1000 \
+      --eval-iters 20 \
+      --early-stop-patience 5 \
+      --val-frac 0.005 \
+      --test-frac 0.005 \
+      --n-layer 8 \
+      --n-head 8 \
+      --n-embd 512 \
+      --batch-size 256 \
+      --block-size 512 \
+      --learning-rate 2e-4 \
+      --min-lr 2e-5 \
+      --warmup-iters 500 \
+      --dtype bfloat16 \
+      --compile \
+      > "runs/${BASE_RUN}_seed${seed}_${variant}.log" 2>&1 &
+  done
+done
+wait
 ```
 
 ## Larger Single-GPU Runs

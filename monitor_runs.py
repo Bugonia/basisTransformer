@@ -17,7 +17,15 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 
-VARIANTS = ("standard", "block_af", "block_fa", "parallel")
+VARIANTS = (
+    "standard",
+    "standard_fa",
+    "block_af",
+    "block_fa",
+    "block_af_carry",
+    "block_fa_carry",
+    "parallel",
+)
 
 
 @dataclass

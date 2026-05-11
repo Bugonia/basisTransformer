@@ -31,7 +31,17 @@ TINY_SHAKESPEARE_URL = (
     "https://raw.githubusercontent.com/karpathy/char-rnn/"
     "master/data/tinyshakespeare/input.txt"
 )
-VARIANTS = ("standard", "block_af", "block_fa", "parallel")
+LEGACY_VARIANTS = ("standard", "block_af", "block_fa", "parallel")
+BASIS_VARIANTS = ("standard", "standard_fa", "block_af_carry", "block_fa_carry")
+VARIANTS = (
+    "standard",
+    "standard_fa",
+    "block_af",
+    "block_fa",
+    "block_af_carry",
+    "block_fa_carry",
+    "parallel",
+)
 
 
 @dataclass
@@ -140,10 +150,17 @@ class Block(nn.Module):
     def n2(self, x: torch.Tensor) -> torch.Tensor:
         return self.ln2(x) if self.use_norm else x
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, prev_x: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         if self.variant == "standard":
             x = x + self.attn(self.n1(x))
             x = x + self.ffn(self.n2(x))
+            return x
+
+        if self.variant == "standard_fa":
+            x = x + self.ffn(self.n1(x))
+            x = x + self.attn(self.n2(x))
             return x
 
         if self.variant == "block_af":
@@ -155,6 +172,18 @@ class Block(nn.Module):
             # h_next = h + Attn(FFN(h)); with optional Pre-LN around each submodule.
             f = self.ffn(self.n1(x))
             return x + self.attn(self.n2(f))
+
+        if self.variant == "block_af_carry":
+            prev = torch.zeros_like(x) if prev_x is None else prev_x
+            a = self.attn(self.n1(x))
+            a_prev = self.attn(self.n1(prev))
+            return x + self.ffn(self.n2(a + a_prev))
+
+        if self.variant == "block_fa_carry":
+            prev = torch.zeros_like(x) if prev_x is None else prev_x
+            f = self.ffn(self.n1(x))
+            f_prev = self.ffn(self.n1(prev))
+            return x + self.attn(self.n2(f + f_prev))
 
         if self.variant == "parallel":
             return x + self.attn(self.n1(x)) + self.ffn(self.n2(x))
@@ -199,8 +228,10 @@ class TinyGPT(nn.Module):
         tok_emb = self.transformer.wte(idx)
         pos_emb = self.transformer.wpe(pos)
         x = self.transformer.drop(tok_emb + pos_emb)
+        prev_x = None
         for block in self.transformer.h:
-            x = block(x)
+            next_x = block(x, prev_x)
+            prev_x, x = x, next_x
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x)
         loss = None
@@ -566,9 +597,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--variant",
-        choices=("all",) + VARIANTS,
+        choices=("all", "basis", "all_variants") + VARIANTS,
         default="all",
-        help="Topology to run. 'all' runs the four variants sequentially.",
+        help="'all' runs the legacy four variants; 'basis' runs the new basis "
+        "suite; 'all_variants' runs every implemented variant.",
     )
     parser.add_argument("--norm", choices=("pre", "none"), default="pre")
     parser.add_argument(
@@ -671,7 +703,14 @@ def main() -> None:
         bias=args.bias,
         norm=args.norm,
     )
-    variants = list(VARIANTS) if args.variant == "all" else [args.variant]
+    if args.variant == "all":
+        variants = list(LEGACY_VARIANTS)
+    elif args.variant == "basis":
+        variants = list(BASIS_VARIANTS)
+    elif args.variant == "all_variants":
+        variants = list(VARIANTS)
+    else:
+        variants = [args.variant]
     results = [
         train_one_variant(
             variant, model_config, train_data, val_data, test_data, args, run_dir, device

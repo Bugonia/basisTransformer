@@ -15,17 +15,31 @@ from statistics import mean, stdev
 from typing import Dict, Iterable, List, Sequence, Tuple
 
 
-VARIANT_ORDER = ["standard", "block_af", "block_fa", "parallel"]
+VARIANT_ORDER = [
+    "standard",
+    "standard_fa",
+    "block_af",
+    "block_fa",
+    "block_af_carry",
+    "block_fa_carry",
+    "parallel",
+]
 COLORS = {
     "standard": "#2F6FED",
+    "standard_fa": "#0891B2",
     "block_af": "#0E9F6E",
     "block_fa": "#D97706",
+    "block_af_carry": "#10B981",
+    "block_fa_carry": "#F59E0B",
     "parallel": "#7C3AED",
 }
 LABELS = {
-    "standard": "Standard",
+    "standard": "Standard AF",
+    "standard_fa": "Standard FA",
     "block_af": "Block AF",
     "block_fa": "Block FA",
+    "block_af_carry": "Block AF Carry",
+    "block_fa_carry": "Block FA Carry",
     "parallel": "Parallel",
 }
 
@@ -365,12 +379,16 @@ def draw_curves(
             )
         svg.path(mean_points, COLORS.get(variant, "#111827"), width=3.0, opacity=1.0)
 
-    legend_x = x + w - 430
-    legend_y = y + 34
+    legend_cols = 4
+    legend_x = x + w - 620
+    legend_y = y + 30
     for i, variant in enumerate(variants):
-        lx = legend_x + i * 102
-        svg.line(lx, legend_y, lx + 24, legend_y, COLORS.get(variant, "#111827"), 3)
-        svg.text(lx + 30, legend_y + 4, LABELS.get(variant, variant), size=12, fill="#374151")
+        col = i % legend_cols
+        row = i // legend_cols
+        lx = legend_x + col * 150
+        ly = legend_y + row * 20
+        svg.line(lx, ly, lx + 24, ly, COLORS.get(variant, "#111827"), 3)
+        svg.text(lx + 30, ly + 4, LABELS.get(variant, variant), size=12, fill="#374151")
 
 
 def values_by_variant(rows: List[Dict[str, str]], metric: str) -> Dict[str, List[float]]:
