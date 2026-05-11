@@ -218,6 +218,21 @@ wait
 The summary and plotting scripts automatically pair directories named like
 `..._seed1_standard`, `..._seed1_block_af`, and so on.
 
+To watch progress and ETA while jobs are running:
+
+```bash
+.venv/bin/python monitor_runs.py \
+  --base-run tiny_medium_8l_512d_bs1024_earlystop3 \
+  --watch 10 \
+  --html reports/live_status.html
+```
+
+The terminal table shows each run's latest eval, best validation loss,
+`stale/patience`, tokens/sec, ETA to the next eval, ETA to early stop if the
+validation loss keeps failing to improve, and worst-case ETA to `max_iters`.
+The HTML file refreshes every 20 seconds and is convenient to leave open in a
+notebook file browser.
+
 ## Notes for Fair Comparison
 
 - `--variant all` reseeds before each variant, so the initial weights are
