@@ -97,10 +97,21 @@ def load_summary(patterns: Sequence[str]) -> List[Dict[str, str]]:
                         continue
                     seen.add(key)
                     row["run_name"] = run_dir.name
+                    row["pair_key"] = infer_pair_key(run_dir.name, row["variant"])
                     row["run_dir"] = str(run_dir)
                     row["summary_path"] = str(path)
                     rows.append(row)
     return rows
+
+
+def infer_pair_key(run_name: str, variant: str) -> str:
+    suffix = f"_{variant}"
+    if run_name.endswith(suffix):
+        return run_name[: -len(suffix)]
+    prefix = f"{variant}_"
+    if run_name.startswith(prefix):
+        return run_name[len(prefix) :]
+    return run_name
 
 
 def load_curves(
@@ -420,7 +431,7 @@ def draw_bar_panel(
 def paired_deltas(rows: List[Dict[str, str]], baseline: str) -> Dict[str, List[float]]:
     by_run: Dict[str, Dict[str, Dict[str, str]]] = defaultdict(dict)
     for row in rows:
-        by_run[row["run_name"]][row["variant"]] = row
+        by_run[row["pair_key"]][row["variant"]] = row
     out: Dict[str, List[float]] = defaultdict(list)
     for variants in by_run.values():
         if baseline not in variants:
@@ -501,13 +512,14 @@ def build_report(
     baseline: str,
 ) -> str:
     run_count = len({r["run_name"] for r in rows})
+    pair_count = len({r["pair_key"] for r in rows})
     svg = Svg(1600, 1620)
     svg.rect(0, 0, svg.width, svg.height, fill="#F6F4EF")
     svg.text(56, 62, title, size=34, weight=800)
     svg.text(
         56,
         92,
-        f"{run_count} runs, {len(rows)} variant results. Lower validation loss is better.",
+        f"{pair_count} paired seeds/groups, {run_count} run directories, {len(rows)} variant results. Lower validation loss is better.",
         size=15,
         fill="#4B5563",
     )

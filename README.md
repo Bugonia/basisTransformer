@@ -176,6 +176,48 @@ If memory is still comfortable, try `--n-layer 12 --n-head 12 --n-embd 768
 --batch-size 128 --block-size 256`. This script uses one GPU; multi-GPU DDP is a
 separate extension.
 
+With multiple GPUs, the easiest way to use the machine is to run independent
+variant/seed jobs in parallel. For example, this fills eight GPUs with two seeds
+times four variants:
+
+```bash
+BASE_RUN=tiny_medium_8l_512d_earlystop3
+mkdir -p runs
+for seed in 1 2; do
+  for variant in standard block_af block_fa parallel; do
+    gpu=$(( (seed - 1) * 4 ))
+    case "$variant" in
+      standard) offset=0 ;;
+      block_af) offset=1 ;;
+      block_fa) offset=2 ;;
+      parallel) offset=3 ;;
+    esac
+    gpu=$(( gpu + offset ))
+    CUDA_VISIBLE_DEVICES=$gpu .venv/bin/python train_block_residuals.py \
+      --dataset tiny_shakespeare \
+      --variant "$variant" \
+      --run-name "${BASE_RUN}_seed${seed}_${variant}" \
+      --seed "$seed" \
+      --max-iters 20000 \
+      --eval-interval 1000 \
+      --eval-iters 100 \
+      --early-stop-patience 3 \
+      --n-layer 8 \
+      --n-head 8 \
+      --n-embd 512 \
+      --batch-size 256 \
+      --block-size 256 \
+      --dtype bfloat16 \
+      --compile \
+      > "runs/${BASE_RUN}_seed${seed}_${variant}.log" 2>&1 &
+  done
+done
+wait
+```
+
+The summary and plotting scripts automatically pair directories named like
+`..._seed1_standard`, `..._seed1_block_af`, and so on.
+
 ## Notes for Fair Comparison
 
 - `--variant all` reseeds before each variant, so the initial weights are

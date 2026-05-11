@@ -59,9 +59,20 @@ def load_rows(patterns: List[str]) -> List[Dict[str, str]]:
             with path.open(newline="", encoding="utf-8") as f:
                 for row in csv.DictReader(f):
                     row["run_name"] = run_name
+                    row["pair_key"] = infer_pair_key(run_name, row["variant"])
                     row["summary_path"] = str(path)
                     rows.append(row)
     return rows
+
+
+def infer_pair_key(run_name: str, variant: str) -> str:
+    suffix = f"_{variant}"
+    if run_name.endswith(suffix):
+        return run_name[: -len(suffix)]
+    prefix = f"{variant}_"
+    if run_name.startswith(prefix):
+        return run_name[len(prefix) :]
+    return run_name
 
 
 def attach_best_elapsed(rows: List[Dict[str, str]]) -> None:
@@ -90,7 +101,7 @@ def main() -> None:
     by_run: Dict[str, Dict[str, Dict[str, str]]] = defaultdict(dict)
     for row in rows:
         by_variant[row["variant"]].append(row)
-        by_run[row["run_name"]][row["variant"]] = row
+        by_run[row["pair_key"]][row["variant"]] = row
 
     print("variant,best_val_loss,final_val_loss,best_iter,best_elapsed_sec,total_elapsed_sec,n")
     for variant in sorted(by_variant):
