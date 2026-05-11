@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import math
 from collections import defaultdict
 from pathlib import Path
@@ -63,11 +64,27 @@ def load_rows(patterns: List[str]) -> List[Dict[str, str]]:
     return rows
 
 
+def attach_best_elapsed(rows: List[Dict[str, str]]) -> None:
+    for row in rows:
+        path = Path(row["summary_path"]).parent / f"{row['variant']}.jsonl"
+        best_iter = safe_int(row.get("best_iter", "0"))
+        best_elapsed = safe_float(row.get("elapsed_sec", "nan"))
+        if path.exists():
+            with path.open(encoding="utf-8") as f:
+                for line in f:
+                    item = json.loads(line)
+                    if safe_int(item.get("iter")) == best_iter:
+                        best_elapsed = safe_float(item.get("elapsed_sec"))
+                        break
+        row["best_elapsed_sec"] = str(best_elapsed)
+
+
 def main() -> None:
     args = parse_args()
     rows = load_rows(args.patterns)
     if not rows:
         raise SystemExit("No summary.csv rows found.")
+    attach_best_elapsed(rows)
 
     by_variant: Dict[str, List[Dict[str, str]]] = defaultdict(list)
     by_run: Dict[str, Dict[str, Dict[str, str]]] = defaultdict(dict)
@@ -75,7 +92,7 @@ def main() -> None:
         by_variant[row["variant"]].append(row)
         by_run[row["run_name"]][row["variant"]] = row
 
-    print("variant,best_val_loss,final_val_loss,best_iter,elapsed_sec,n")
+    print("variant,best_val_loss,final_val_loss,best_iter,best_elapsed_sec,total_elapsed_sec,n")
     for variant in sorted(by_variant):
         group = by_variant[variant]
         print(
@@ -83,6 +100,7 @@ def main() -> None:
             f"{summarize(safe_float(r['best_val_loss']) for r in group)},"
             f"{summarize(safe_float(r['final_val_loss']) for r in group)},"
             f"{summarize(safe_int(r.get('best_iter', '0')) for r in group)},"
+            f"{summarize(safe_float(r['best_elapsed_sec']) for r in group)},"
             f"{summarize(safe_float(r['elapsed_sec']) for r in group)},"
             f"{len(group)}"
         )

@@ -16,6 +16,7 @@ import math
 import random
 import time
 import urllib.request
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -242,6 +243,13 @@ def choose_device(requested: str) -> torch.device:
     return torch.device("cpu")
 
 
+def autocast_context(device: torch.device, dtype_name: str):
+    if dtype_name == "float32" or device.type not in ("cuda", "cpu"):
+        return nullcontext()
+    dtype = {"bfloat16": torch.bfloat16}[dtype_name]
+    return torch.amp.autocast(device_type=device.type, dtype=dtype)
+
+
 def download_tiny_shakespeare(data_dir: Path) -> Path:
     data_dir.mkdir(parents=True, exist_ok=True)
     path = data_dir / "tiny_shakespeare.txt"
@@ -309,7 +317,8 @@ def estimate_loss(
         rng.manual_seed(args.seed + (0 if split == "train" else 1_000_000))
         for k in range(args.eval_iters):
             x, y = get_batch(data, args.batch_size, args.block_size, device, rng)
-            _, loss = model(x, y)
+            with autocast_context(device, args.dtype):
+                _, loss = model(x, y)
             assert loss is not None
             losses[k] = loss.item()
         out[split] = losses.mean().item()
@@ -432,7 +441,8 @@ def train_one_variant(
             x, y = get_batch(
                 train_data, args.batch_size, args.block_size, device, batch_rng
             )
-            _, loss = model(x, y)
+            with autocast_context(device, args.dtype):
+                _, loss = model(x, y)
             assert loss is not None
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -509,6 +519,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", type=str, default="runs/block_residuals")
     parser.add_argument("--run-name", type=str, default=None)
     parser.add_argument("--device", type=str, default="auto")
+    parser.add_argument(
+        "--dtype",
+        choices=("float32", "bfloat16"),
+        default="float32",
+        help="Forward-pass dtype. Use bfloat16 on H100/A100-class GPUs.",
+    )
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument("--max-iters", type=int, default=1000)
     parser.add_argument("--eval-interval", type=int, default=100)

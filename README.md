@@ -136,9 +136,45 @@ To aggregate multiple seeds and compare convergence speed:
   'runs/block_residuals/tiny_small_4l_256d_earlystop3_seed*/summary.csv'
 ```
 
-The report includes `best_iter` and `elapsed_sec`. `best_iter` is usually the
-cleaner convergence-speed metric because wall-clock time can include one-time
-kernel compilation, caching, or cluster noise.
+The report includes `best_iter`, `best_elapsed_sec`, and total elapsed time.
+`best_iter` is usually the cleaner convergence-speed metric because wall-clock
+time can include one-time kernel compilation, caching, or cluster noise.
+
+To make an SVG report without installing plotting libraries:
+
+```bash
+.venv/bin/python plot_results_svg.py \
+  'runs/block_residuals/tiny_small_4l_256d_earlystop3_seed*/summary.csv' \
+  --output reports/tiny_small_4l_256d_earlystop3.svg
+```
+
+## Larger Single-GPU Runs
+
+On H100/A100-class GPUs, use bfloat16 and optionally `torch.compile` to make
+larger experiments less CPU-bound:
+
+```bash
+.venv/bin/python train_block_residuals.py \
+  --dataset tiny_shakespeare \
+  --variant all \
+  --run-name tiny_medium_8l_512d_earlystop3_seed1 \
+  --seed 1 \
+  --max-iters 20000 \
+  --eval-interval 1000 \
+  --eval-iters 100 \
+  --early-stop-patience 3 \
+  --n-layer 8 \
+  --n-head 8 \
+  --n-embd 512 \
+  --batch-size 256 \
+  --block-size 256 \
+  --dtype bfloat16 \
+  --compile
+```
+
+If memory is still comfortable, try `--n-layer 12 --n-head 12 --n-embd 768
+--batch-size 128 --block-size 256`. This script uses one GPU; multi-GPU DDP is a
+separate extension.
 
 ## Notes for Fair Comparison
 
