@@ -110,9 +110,10 @@ This downloads Tiny Shakespeare into `data/` on first use and writes logs under
 .venv/bin/python train_block_residuals.py \
   --dataset tiny_shakespeare \
   --variant all \
-  --max-iters 1000 \
-  --eval-interval 100 \
-  --eval-iters 50 \
+  --max-iters 20000 \
+  --eval-interval 1000 \
+  --eval-iters 100 \
+  --early-stop-patience 3 \
   --n-layer 6 \
   --n-head 6 \
   --n-embd 384 \
@@ -122,6 +123,11 @@ This downloads Tiny Shakespeare into `data/` on first use and writes logs under
 
 Each variant gets a JSONL training log. The run directory also contains
 `summary.csv`, which is the easiest file to compare first.
+
+For early stopping, `val_loss` is treated as the stopping metric. A patience of
+3 means a variant stops after three printed evaluations in a row fail to improve
+the best validation loss. `best_iter` and `stop_reason` are written to
+`summary.csv`.
 
 ## Notes for Fair Comparison
 

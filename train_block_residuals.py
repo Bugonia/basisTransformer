@@ -368,6 +368,9 @@ def train_one_variant(
     start_time = time.time()
     last_grad_norm = float("nan")
     best_val = float("inf")
+    best_iter = 0
+    no_improve_count = 0
+    stop_reason = "max_iters"
     final_losses = {"train": float("nan"), "val": float("nan")}
 
     print(f"\n=== {variant} ===")
@@ -377,7 +380,13 @@ def train_one_variant(
             if iter_num % args.eval_interval == 0 or iter_num == args.max_iters:
                 losses = estimate_loss(model, train_data, val_data, args, device)
                 final_losses = losses
-                best_val = min(best_val, losses["val"])
+                improved = losses["val"] < best_val - args.early_stop_min_delta
+                if improved:
+                    best_val = losses["val"]
+                    best_iter = iter_num
+                    no_improve_count = 0
+                elif iter_num > 0:
+                    no_improve_count += 1
                 elapsed = max(1e-9, time.time() - start_time)
                 row = {
                     "variant": variant,
@@ -385,6 +394,8 @@ def train_one_variant(
                     "train_loss": losses["train"],
                     "val_loss": losses["val"],
                     "best_val_loss": best_val,
+                    "best_iter": best_iter,
+                    "no_improve_count": no_improve_count,
                     "lr": optimizer.param_groups[0]["lr"],
                     "grad_norm": last_grad_norm,
                     "tokens_seen": tokens_seen,
@@ -396,8 +407,21 @@ def train_one_variant(
                 print(
                     f"iter {iter_num:5d} | "
                     f"train {losses['train']:.4f} | val {losses['val']:.4f} | "
-                    f"best {best_val:.4f} | tok/s {tokens_seen / elapsed:.0f}"
+                    f"best {best_val:.4f} @ {best_iter} | "
+                    f"stale {no_improve_count} | tok/s {tokens_seen / elapsed:.0f}"
                 )
+                if (
+                    args.early_stop_patience > 0
+                    and no_improve_count >= args.early_stop_patience
+                ):
+                    stop_reason = (
+                        f"early_stop_patience_{args.early_stop_patience}"
+                    )
+                    print(
+                        f"early stopping at iter {iter_num}: "
+                        f"best val {best_val:.4f} at iter {best_iter}"
+                    )
+                    break
             if iter_num == args.max_iters:
                 break
 
@@ -427,6 +451,8 @@ def train_one_variant(
         "final_train_loss": final_losses["train"],
         "final_val_loss": final_losses["val"],
         "best_val_loss": best_val,
+        "best_iter": best_iter,
+        "stop_reason": stop_reason,
         "tokens_seen": tokens_seen,
         "elapsed_sec": time.time() - start_time,
     }
@@ -454,6 +480,8 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
         "final_train_loss",
         "final_val_loss",
         "best_val_loss",
+        "best_iter",
+        "stop_reason",
         "tokens_seen",
         "elapsed_sec",
         "checkpoint",
@@ -485,6 +513,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-iters", type=int, default=1000)
     parser.add_argument("--eval-interval", type=int, default=100)
     parser.add_argument("--eval-iters", type=int, default=50)
+    parser.add_argument(
+        "--early-stop-patience",
+        type=int,
+        default=0,
+        help="Stop a variant after this many evals without val-loss improvement. "
+        "0 disables early stopping.",
+    )
+    parser.add_argument(
+        "--early-stop-min-delta",
+        type=float,
+        default=0.0,
+        help="Minimum val-loss decrease required to reset early-stop patience.",
+    )
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--block-size", type=int, default=128)
     parser.add_argument("--n-layer", type=int, default=6)
