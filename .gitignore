@@ -1,6 +1,8 @@
 .venv/
 data/
 runs/
+reports/
+wheelhouse*/
 __pycache__/
 *.pyc
 *.pt

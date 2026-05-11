@@ -20,7 +20,7 @@ from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -271,11 +271,11 @@ def synthetic_text(num_chars: int = 250_000) -> str:
 
 def load_text(args: argparse.Namespace) -> str:
     if args.data_file:
-        return Path(args.data_file).read_text(encoding="utf-8")
+        return Path(args.data_file).read_text(encoding=args.encoding)
     if args.dataset == "synthetic":
         return synthetic_text()
     path = download_tiny_shakespeare(Path(args.data_dir))
-    return path.read_text(encoding="utf-8")
+    return path.read_text(encoding=args.encoding)
 
 
 def encode_text(text: str) -> Tuple[torch.Tensor, Dict[str, int], List[str]]:
@@ -283,6 +283,24 @@ def encode_text(text: str) -> Tuple[torch.Tensor, Dict[str, int], List[str]]:
     stoi = {ch: i for i, ch in enumerate(chars)}
     data = torch.tensor([stoi[ch] for ch in text], dtype=torch.long)
     return data, stoi, chars
+
+
+def split_data(
+    data: torch.Tensor, val_frac: float, test_frac: float
+) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+    if val_frac <= 0:
+        raise ValueError("--val-frac must be positive")
+    if test_frac < 0:
+        raise ValueError("--test-frac cannot be negative")
+    if val_frac + test_frac >= 1.0:
+        raise ValueError("--val-frac + --test-frac must be less than 1")
+    n = len(data)
+    train_end = int((1.0 - val_frac - test_frac) * n)
+    val_end = int((1.0 - test_frac) * n)
+    train_data = data[:train_end]
+    val_data = data[train_end:val_end]
+    test_data = data[val_end:] if test_frac > 0 else None
+    return train_data, val_data, test_data
 
 
 def get_batch(
@@ -302,6 +320,26 @@ def get_batch(
 
 
 @torch.no_grad()
+def estimate_split_loss(
+    model: TinyGPT,
+    data: torch.Tensor,
+    args: argparse.Namespace,
+    device: torch.device,
+    split_seed_offset: int,
+) -> float:
+    losses = torch.empty(args.eval_iters)
+    rng = torch.Generator(device="cpu")
+    rng.manual_seed(args.seed + split_seed_offset)
+    for k in range(args.eval_iters):
+        x, y = get_batch(data, args.batch_size, args.block_size, device, rng)
+        with autocast_context(device, args.dtype):
+            _, loss = model(x, y)
+        assert loss is not None
+        losses[k] = loss.item()
+    return losses.mean().item()
+
+
+@torch.no_grad()
 def estimate_loss(
     model: TinyGPT,
     train_data: torch.Tensor,
@@ -310,18 +348,23 @@ def estimate_loss(
     device: torch.device,
 ) -> Dict[str, float]:
     model.eval()
-    out: Dict[str, float] = {}
-    for split, data in (("train", train_data), ("val", val_data)):
-        losses = torch.empty(args.eval_iters)
-        rng = torch.Generator(device="cpu")
-        rng.manual_seed(args.seed + (0 if split == "train" else 1_000_000))
-        for k in range(args.eval_iters):
-            x, y = get_batch(data, args.batch_size, args.block_size, device, rng)
-            with autocast_context(device, args.dtype):
-                _, loss = model(x, y)
-            assert loss is not None
-            losses[k] = loss.item()
-        out[split] = losses.mean().item()
+    out = {
+        "train": estimate_split_loss(model, train_data, args, device, 0),
+        "val": estimate_split_loss(model, val_data, args, device, 1_000_000),
+    }
+    model.train()
+    return out
+
+
+@torch.no_grad()
+def estimate_test_loss(
+    model: TinyGPT,
+    test_data: torch.Tensor,
+    args: argparse.Namespace,
+    device: torch.device,
+) -> float:
+    model.eval()
+    out = estimate_split_loss(model, test_data, args, device, 2_000_000)
     model.train()
     return out
 
@@ -349,11 +392,16 @@ def count_parameters(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters())
 
 
+def clone_state_dict_to_cpu(model: nn.Module) -> Dict[str, torch.Tensor]:
+    return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+
+
 def train_one_variant(
     variant: str,
     model_config: ModelConfig,
     train_data: torch.Tensor,
     val_data: torch.Tensor,
+    test_data: Optional[torch.Tensor],
     args: argparse.Namespace,
     run_dir: Path,
     device: torch.device,
@@ -381,6 +429,8 @@ def train_one_variant(
     no_improve_count = 0
     stop_reason = "max_iters"
     final_losses = {"train": float("nan"), "val": float("nan")}
+    best_state: Optional[Dict[str, torch.Tensor]] = None
+    test_loss = float("nan")
 
     print(f"\n=== {variant} ===")
     print(f"parameters: {count_parameters(model):,}")
@@ -394,6 +444,8 @@ def train_one_variant(
                     best_val = losses["val"]
                     best_iter = iter_num
                     no_improve_count = 0
+                    if test_data is not None:
+                        best_state = clone_state_dict_to_cpu(model)
                 elif iter_num > 0:
                     no_improve_count += 1
                 elapsed = max(1e-9, time.time() - start_time)
@@ -455,12 +507,19 @@ def train_one_variant(
             optimizer.step()
             tokens_seen += args.batch_size * args.block_size
 
+    if test_data is not None:
+        if best_state is not None:
+            model.load_state_dict(best_state)
+        test_loss = estimate_test_loss(model, test_data, args, device)
+        print(f"test loss at best-val checkpoint: {test_loss:.4f}")
+
     result = {
         "variant": variant,
         "parameters": count_parameters(model),
         "final_train_loss": final_losses["train"],
         "final_val_loss": final_losses["val"],
         "best_val_loss": best_val,
+        "test_loss": test_loss,
         "best_iter": best_iter,
         "stop_reason": stop_reason,
         "tokens_seen": tokens_seen,
@@ -490,6 +549,7 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
         "final_train_loss",
         "final_val_loss",
         "best_val_loss",
+        "test_loss",
         "best_iter",
         "stop_reason",
         "tokens_seen",
@@ -515,6 +575,7 @@ def parse_args() -> argparse.Namespace:
         "--dataset", choices=("tiny_shakespeare", "synthetic"), default="tiny_shakespeare"
     )
     parser.add_argument("--data-file", type=str, default=None)
+    parser.add_argument("--encoding", type=str, default="utf-8")
     parser.add_argument("--data-dir", type=str, default="data")
     parser.add_argument("--out-dir", type=str, default="runs/block_residuals")
     parser.add_argument("--run-name", type=str, default=None)
@@ -529,6 +590,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-iters", type=int, default=1000)
     parser.add_argument("--eval-interval", type=int, default=100)
     parser.add_argument("--eval-iters", type=int, default=50)
+    parser.add_argument("--val-frac", type=float, default=0.1)
+    parser.add_argument(
+        "--test-frac",
+        type=float,
+        default=0.0,
+        help="Hold out this fraction as test. Test loss is evaluated once at "
+        "the best validation checkpoint.",
+    )
     parser.add_argument(
         "--early-stop-patience",
         type=int,
@@ -573,12 +642,11 @@ def main() -> None:
     print(f"device: {device}")
     text = load_text(args)
     data, _, chars = encode_text(text)
-    n = int(0.9 * len(data))
-    train_data = data[:n]
-    val_data = data[n:]
+    train_data, val_data, test_data = split_data(data, args.val_frac, args.test_frac)
     print(
         f"dataset chars: {len(data):,} | vocab: {len(chars)} | "
-        f"train: {len(train_data):,} | val: {len(val_data):,}"
+        f"train: {len(train_data):,} | val: {len(val_data):,} | "
+        f"test: {len(test_data) if test_data is not None else 0:,}"
     )
 
     run_name = args.run_name or datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -606,7 +674,7 @@ def main() -> None:
     variants = list(VARIANTS) if args.variant == "all" else [args.variant]
     results = [
         train_one_variant(
-            variant, model_config, train_data, val_data, args, run_dir, device
+            variant, model_config, train_data, val_data, test_data, args, run_dir, device
         )
         for variant in variants
     ]
@@ -618,6 +686,7 @@ def main() -> None:
         print(
             f"{row['variant']:>9s} | "
             f"best_val={row['best_val_loss']:.4f} | "
+            f"test={row['test_loss']:.4f} | "
             f"final_val={row['final_val_loss']:.4f} | "
             f"elapsed={row['elapsed_sec']:.1f}s"
         )

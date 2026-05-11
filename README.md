@@ -129,6 +129,11 @@ For early stopping, `val_loss` is treated as the stopping metric. A patience of
 the best validation loss. `best_iter` and `stop_reason` are written to
 `summary.csv`.
 
+If `--test-frac` is positive, the split is train/validation/test. Validation is
+used for early stopping; after training, the script restores the validation-best
+checkpoint and evaluates test loss once. `test_loss` is then written to
+`summary.csv`.
+
 To aggregate multiple seeds and compare convergence speed:
 
 ```bash
@@ -146,6 +151,83 @@ To make an SVG report without installing plotting libraries:
 .venv/bin/python plot_results_svg.py \
   'runs/block_residuals/tiny_small_4l_256d_earlystop3_seed*/summary.csv' \
   --output reports/tiny_small_4l_256d_earlystop3.svg
+```
+
+## Larger Data
+
+Tiny Shakespeare is small enough that larger models overfit quickly. For a more
+meaningful scale-up, prepare enwik8 once on an online node and store it in the
+shared global directory:
+
+```bash
+cd /inspire/hdd/global_user/zhongxiaoqiu-253108120179/basisTransformer
+source .venv_cu128/bin/activate
+python prepare_enwik8.py --data-dir data
+```
+
+On the offline GPU node, train from that shared file with a held-out test split:
+
+```bash
+BASE_RUN=enwik8_8l_512d_ctx512_bs256_lr2e4_test005_earlystop5
+mkdir -p runs
+
+for seed in 1 2; do
+  for variant in standard block_af block_fa parallel; do
+    gpu=$(( (seed - 1) * 4 ))
+    case "$variant" in
+      standard) offset=0 ;;
+      block_af) offset=1 ;;
+      block_fa) offset=2 ;;
+      parallel) offset=3 ;;
+    esac
+    gpu=$(( gpu + offset ))
+
+    CUDA_VISIBLE_DEVICES=$gpu .venv_cu128/bin/python train_block_residuals.py \
+      --data-file data/enwik8.txt \
+      --encoding latin-1 \
+      --variant "$variant" \
+      --run-name "${BASE_RUN}_seed${seed}_${variant}" \
+      --seed "$seed" \
+      --max-iters 10000 \
+      --eval-interval 500 \
+      --eval-iters 20 \
+      --early-stop-patience 5 \
+      --val-frac 0.005 \
+      --test-frac 0.005 \
+      --n-layer 8 \
+      --n-head 8 \
+      --n-embd 512 \
+      --batch-size 256 \
+      --block-size 512 \
+      --learning-rate 2e-4 \
+      --min-lr 2e-5 \
+      --warmup-iters 500 \
+      --dtype bfloat16 \
+      --compile \
+      > "runs/${BASE_RUN}_seed${seed}_${variant}.log" 2>&1 &
+  done
+done
+wait
+```
+
+Monitor while it runs:
+
+```bash
+.venv_cu128/bin/python monitor_runs.py \
+  --base-run "$BASE_RUN" \
+  --watch 10 \
+  --html "reports/${BASE_RUN}_live.html"
+```
+
+Summarize and plot:
+
+```bash
+.venv_cu128/bin/python summarize_runs.py \
+  "runs/block_residuals/${BASE_RUN}_seed*/summary.csv"
+
+.venv_cu128/bin/python plot_results_svg.py \
+  "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
+  --output "reports/${BASE_RUN}.svg"
 ```
 
 ## Larger Single-GPU Runs

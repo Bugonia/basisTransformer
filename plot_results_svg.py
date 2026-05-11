@@ -486,11 +486,12 @@ def draw_table(svg: Svg, rows: List[Dict[str, str]], x: float, y: float, w: floa
     variants = variant_order(r["variant"] for r in rows)
     metrics = [
         ("best_val_loss", "Best val", lambda v: fmt(v, 4)),
+        ("test_loss", "Test", lambda v: fmt(v, 4)),
         ("best_iter", "Best iter", fmt_iter),
         ("best_elapsed_sec", "Time to best", lambda v: f"{v:.1f}s" if not math.isnan(v) else "n/a"),
     ]
     start_y = y + 82
-    col_x = [x + 32, x + 190, x + 360, x + 530]
+    col_x = [x + 32, x + 190, x + 340, x + 490, x + 650]
     svg.text(col_x[0], start_y, "Variant", size=12, weight=700, fill="#374151")
     for i, (_, label, _) in enumerate(metrics, start=1):
         svg.text(col_x[i], start_y, label, size=12, weight=700, fill="#374151")
@@ -551,19 +552,35 @@ def build_report(
         fmt_iter,
         zero_baseline=True,
     )
-    draw_bar_panel(
-        svg,
-        rows,
-        "best_elapsed_sec",
-        56,
-        1006,
-        700,
-        300,
-        "Seconds to Best",
-        "Wall-clock estimate from JSONL logs.",
-        lambda v: f"{v:.0f}s" if not math.isnan(v) else "n/a",
-        zero_baseline=True,
-    )
+    has_test = finite(safe_float(r.get("test_loss")) for r in rows)
+    if has_test:
+        draw_bar_panel(
+            svg,
+            rows,
+            "test_loss",
+            56,
+            1006,
+            700,
+            300,
+            "Test Loss at Best Val",
+            "Evaluated once after restoring the validation-best checkpoint.",
+            lambda v: fmt(v, 3),
+            zero_baseline=False,
+        )
+    else:
+        draw_bar_panel(
+            svg,
+            rows,
+            "best_elapsed_sec",
+            56,
+            1006,
+            700,
+            300,
+            "Seconds to Best",
+            "Wall-clock estimate from JSONL logs.",
+            lambda v: f"{v:.0f}s" if not math.isnan(v) else "n/a",
+            zero_baseline=True,
+        )
     draw_delta_panel(svg, rows, baseline, 844, 1006, 700, 300)
     draw_table(svg, rows, 56, 1346, 1488, 220)
     return svg.render()

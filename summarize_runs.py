@@ -103,12 +103,13 @@ def main() -> None:
         by_variant[row["variant"]].append(row)
         by_run[row["pair_key"]][row["variant"]] = row
 
-    print("variant,best_val_loss,final_val_loss,best_iter,best_elapsed_sec,total_elapsed_sec,n")
+    print("variant,best_val_loss,test_loss,final_val_loss,best_iter,best_elapsed_sec,total_elapsed_sec,n")
     for variant in sorted(by_variant):
         group = by_variant[variant]
         print(
             f"{variant},"
             f"{summarize(safe_float(r['best_val_loss']) for r in group)},"
+            f"{summarize(safe_float(r.get('test_loss', 'nan')) for r in group)},"
             f"{summarize(safe_float(r['final_val_loss']) for r in group)},"
             f"{summarize(safe_int(r.get('best_iter', '0')) for r in group)},"
             f"{summarize(safe_float(r['best_elapsed_sec']) for r in group)},"
@@ -131,6 +132,25 @@ def main() -> None:
         print(f"\npaired_delta_vs_{baseline},best_val_loss_delta,n")
         for variant in sorted(paired):
             print(f"{variant},{summarize(paired[variant])},{len(paired[variant])}")
+
+    paired_test: Dict[str, List[float]] = defaultdict(list)
+    for variants in by_run.values():
+        if baseline not in variants:
+            continue
+        base_loss = safe_float(variants[baseline].get("test_loss", "nan"))
+        if math.isnan(base_loss):
+            continue
+        for variant, row in variants.items():
+            if variant == baseline:
+                continue
+            value = safe_float(row.get("test_loss", "nan"))
+            if not math.isnan(value):
+                paired_test[variant].append(value - base_loss)
+
+    if paired_test:
+        print(f"\npaired_delta_vs_{baseline},test_loss_delta,n")
+        for variant in sorted(paired_test):
+            print(f"{variant},{summarize(paired_test[variant])},{len(paired_test[variant])}")
 
 
 if __name__ == "__main__":
