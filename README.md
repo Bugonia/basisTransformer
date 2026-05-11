@@ -40,9 +40,47 @@ modern decoder-only Transformers.
 
 ## Setup
 
+For a normal online CPU/GPU environment, install the default dependencies:
+
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
+```
+
+On clusters with CUDA 12.x drivers, do not let `pip install torch` choose the
+default PyPI wheel if that wheel is built for CUDA 13. Install NumPy from PyPI
+and PyTorch from the official CUDA 12.8 wheel index:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install numpy
+.venv/bin/python -m pip install -r requirements-cu128.txt
+.venv/bin/python -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
+```
+
+For an offline training node that can read a shared global directory, prepare a
+wheelhouse once on an online node:
+
+```bash
+BASE=/inspire/hdd/global_user/zhongxiaoqiu-253108120179
+cd $BASE/basisTransformer
+
+mkdir -p $BASE/wheelhouse $BASE/.cache/pip
+export PIP_CACHE_DIR=$BASE/.cache/pip
+
+python3 -m venv .venv
+.venv/bin/python -m pip download numpy -d $BASE/wheelhouse
+.venv/bin/python -m pip download torch --index-url https://download.pytorch.org/whl/cu128 -d $BASE/wheelhouse
+.venv/bin/python -m pip install --no-index --find-links $BASE/wheelhouse numpy torch
+```
+
+Then on the offline training node:
+
+```bash
+BASE=/inspire/hdd/global_user/zhongxiaoqiu-253108120179
+cd $BASE/basisTransformer
+source .venv/bin/activate
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
 ```
 
 ## Quick Smoke Run
