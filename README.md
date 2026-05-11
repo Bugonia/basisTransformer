@@ -129,6 +129,17 @@ For early stopping, `val_loss` is treated as the stopping metric. A patience of
 the best validation loss. `best_iter` and `stop_reason` are written to
 `summary.csv`.
 
+To aggregate multiple seeds and compare convergence speed:
+
+```bash
+.venv/bin/python summarize_runs.py \
+  'runs/block_residuals/tiny_small_4l_256d_earlystop3_seed*/summary.csv'
+```
+
+The report includes `best_iter` and `elapsed_sec`. `best_iter` is usually the
+cleaner convergence-speed metric because wall-clock time can include one-time
+kernel compilation, caching, or cluster noise.
+
 ## Notes for Fair Comparison
 
 - `--variant all` reseeds before each variant, so the initial weights are
