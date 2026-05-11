@@ -234,11 +234,18 @@ def status_for_run(run_dir: Path, plain_log_dir: Path, gpu_by_pid: Dict[int, str
     eta_max = max(0, max_iters - iter_num) * sec_per_iter
     done_reason = summary_state(run_dir, variant)
     note = plain_log_note(plain_log_dir, run_dir.name)
-    pids = pids_for_run(run_dir.name)
-    gpu = ",".join(gpu_by_pid.get(pid, str(pid)) for pid in pids) if pids else "-"
-    state = "done" if done_reason else ("running" if pids else "pending/log-only")
     if done_reason:
         note = done_reason
+        pids = []
+        gpu = "-"
+        state = "done"
+        eta_next_eval = float("nan")
+        eta_stop_if_stale = float("nan")
+        eta_max = float("nan")
+    else:
+        pids = pids_for_run(run_dir.name)
+        gpu = ",".join(gpu_by_pid.get(pid, str(pid)) for pid in pids) if pids else "-"
+        state = "running" if pids else "pending/log-only"
     return RunStatus(
         run_name=run_dir.name,
         variant=variant,
@@ -357,19 +364,22 @@ def write_html(statuses: List[RunStatus], path: Path, base_run: Optional[str]) -
 
 def main() -> None:
     args = parse_args()
-    while True:
-        statuses = collect_status(args)
-        os.system("clear")
-        if statuses:
-            print_table(statuses, args.base_run)
-            if args.html:
-                write_html(statuses, Path(args.html), args.base_run)
-                print(f"\nHTML dashboard: {args.html}")
-        else:
-            print("No runs found.")
-        if args.watch <= 0:
-            break
-        time.sleep(args.watch)
+    try:
+        while True:
+            statuses = collect_status(args)
+            os.system("clear")
+            if statuses:
+                print_table(statuses, args.base_run)
+                if args.html:
+                    write_html(statuses, Path(args.html), args.base_run)
+                    print(f"\nHTML dashboard: {args.html}")
+            else:
+                print("No runs found.")
+            if args.watch <= 0:
+                break
+            time.sleep(args.watch)
+    except KeyboardInterrupt:
+        print("\nmonitor stopped.")
 
 
 if __name__ == "__main__":
