@@ -27,20 +27,16 @@ $$
 H_l \in \mathbb{R}^{T \times d}
 $$
 
-是第 \(l\) 层的 residual stream，\(T\) 是 context length，\(d\) 是 hidden
+是第 $l$ 层的 residual stream，$T$ 是 context length，$d$ 是 hidden
 dimension。
 
 实验关心的问题不是简单的“残差连接是否有用”，而是更细的结构问题：
 
-$$
-\text{Attention 和 FFN 是否都需要直接写入 residual stream？}
-$$
+> Attention 和 FFN 是否都需要直接写入 residual stream？
 
 或者说：
 
-$$
-\text{如果一类模块只负责调制系数，而不直接提供最终写入基，性能会怎样？}
-$$
+> 如果一类模块只负责调制系数，而不直接提供最终写入基，性能会怎样？
 
 ## 2. 标准 Transformer 的双直接写入
 
@@ -70,15 +66,13 @@ $$
 
 $$
 \Delta_l^A
-\quad\text{和}\quad
+\ ,\
 \Delta_l^F.
 $$
 
 因此标准结构的关键不是“有两个模块”，而是：
 
-$$
-\text{Attention 与 FFN 都是 residual stream 的直接作者。}
-$$
+> Attention 与 FFN 都是 residual stream 的直接作者。
 
 ## 3. Attention 的基与系数
 
@@ -112,7 +106,7 @@ $$
 \qquad j \le i.
 $$
 
-忽略 bias，并把该 head 的 output projection 写作 \(W_O\)，则 token \(i\)
+忽略 bias，并把该 head 的 output projection 写作 $W_O$，则 token $i$
 处的 attention 写入为
 
 $$
@@ -137,11 +131,11 @@ $$
 $$
 \mathcal{B}^A_{l,i}(X_l)
 =
-\left\{
+\{
 x_j W^r_V W^r_O
 :
 r=1,\dots,h,\ j \le i
-\right\}.
+\}.
 $$
 
 对应的系数是 routing weights：
@@ -177,8 +171,8 @@ F_l(z)
 W^2_l \, \phi(W^1_l z + b^1_l) + b^2_l.
 $$
 
-设 \(u_{l,k}\) 是 \(W^1_l\) 的第 \(k\) 个 row，\(v_{l,k}\) 是 \(W^2_l\)
-的第 \(k\) 个 column。忽略 output bias，则
+设 $u_{l,k}$ 是 $W^1_l$ 的第 $k$ 个 row，$v_{l,k}$ 是 $W^2_l$
+的第 $k$ 个 column。忽略 output bias，则
 
 $$
 F_l(z)
@@ -192,9 +186,9 @@ $$
 
 $$
 \mathrm{span}
-\left\{
+\{
 v_{l,1},\dots,v_{l,m}
-\right\}
+\}
 $$
 
 中。也就是说 FFN 提供的是 learned static dictionary：
@@ -202,9 +196,9 @@ $$
 $$
 \mathcal{B}^F_l
 =
-\left\{
+\{
 v_{l,k}
-\right\}_{k=1}^{m}.
+\}_{k=1}^{m}.
 $$
 
 但是 FFN 的系数是上下文相关的。标准 AF block 中
@@ -221,23 +215,23 @@ $$
 c^F_{l,i,k}
 =
 \phi
-\left(
+(
 \langle u_{l,k},
 \mathrm{LN}(H_l+\Delta_l^A)_i
 \rangle
 + b_{l,k}
-\right).
+).
 $$
 
 这说明 FFN-basis 的系数同时依赖：
 
 $$
 H_l
-\quad\text{和}\quad
+\ ,\
 \Delta_l^A.
 $$
 
-而 \(H_l\) 本身已经包含此前所有 Attention 与 FFN 写入。
+而 $H_l$ 本身已经包含此前所有 Attention 与 FFN 写入。
 
 因此标准 AF block 更准确的形式是
 
@@ -259,15 +253,11 @@ $$
 
 更准确的说法是：
 
-$$
-\text{basis 的最终出口分为 Attention-basis 与 FFN-basis，}
-$$
+basis 的最终出口分为 Attention-basis 与 FFN-basis。
 
 但
 
-$$
-\text{两套 coefficient 都由混合后的 residual history 共同生成。}
-$$
+两套 coefficient 都由混合后的 residual history 共同生成。
 
 ## 5. Block 与 Carry 变体到底删除了什么
 
@@ -287,9 +277,9 @@ $$
 H_{l+1}-H_l
 \in
 \mathrm{span}
-\left\{
+\{
 v_{l,1},\dots,v_{l,m}
-\right\}.
+\}.
 $$
 
 Attention 并没有消失。它仍然参与了 FFN 系数的生成。但 Attention 的
@@ -317,15 +307,15 @@ $$
 这就是 `block_af_carry`。它可以概括成：
 
 $$
-\Delta H_l^{AF\text{-}carry}
+\Delta H_l^{AFc}
 =
 B^F_l
 c^F_l
-\left(
+(
 B^A_l(H_l)c^A_l(H_l)
 +
 B^A_l(H_{l-1})c^A_l(H_{l-1})
-\right).
+).
 $$
 
 这里 Attention 通过系数通道参与得很深，但最终直接写入的 basis 仍然是
@@ -352,7 +342,7 @@ $$
 可写成
 
 $$
-\Delta H_l^{FA\text{-}carry}
+\Delta H_l^{FAc}
 =
 B^A_l(Y_l)c^A_l(Y_l),
 $$
@@ -363,11 +353,11 @@ $$
 Y_l
 =
 \mathrm{LN}
-\left(
+(
 B^F_l c^F_l(H_l)
 +
 B^F_l c^F_l(H_{l-1})
-\right).
+).
 $$
 
 此时 FFN 参与了 Attention 的 query、key、value 和 routing coefficient 的
@@ -375,13 +365,11 @@ $$
 
 所以 carry 实验比较的不是“是否使用另一类模块”，而是：
 
-$$
-\text{另一类模块只是调制 coefficient，还是也直接提供最终 write basis？}
-$$
+> 另一类模块只是调制 coefficient，还是也直接提供最终 write basis？
 
 ## 6. Jacobian 视角：为什么 carry 是必要控制组
 
-把 LayerNorm 合并进 \(A\) 与 \(F\) 中。标准 AF block 是
+把 LayerNorm 合并进 $A$ 与 $F$ 中。标准 AF block 是
 
 $$
 G_{\mathrm{std}}(H)
@@ -409,7 +397,7 @@ $$
 
 $$
 DA
-\quad\text{和}\quad
+\ ,\
 DF.
 $$
 
@@ -429,7 +417,7 @@ DG_{\mathrm{block}}
 I + DF\,DA.
 $$
 
-直接的一阶项 \(DA\) 和 \(DF\) 都不见了，只剩组合项。
+直接的一阶项 $DA$ 和 $DF$ 都不见了，只剩组合项。
 
 Carry AF 是二输入递推：
 
@@ -455,12 +443,12 @@ $$
 DF\,DA_{l-1}.
 $$
 
-Carry 确实加入了一条来自 \(H_{l-1}\) 的额外信息和梯度路径；但它仍然没有恢复
+Carry 确实加入了一条来自 $H_{l-1}$ 的额外信息和梯度路径；但它仍然没有恢复
 标准结构中的当前层直接项：
 
 $$
 DA
-\quad\text{和}\quad
+\ ,\
 DF.
 $$
 
@@ -473,12 +461,12 @@ $$
 
 早先 enwik8 固定 30k step 实验比较了：
 
-$$
-\texttt{standard},\quad
-\texttt{parallel},\quad
-\texttt{block\_af},\quad
-\texttt{block\_fa}.
-$$
+```text
+standard
+parallel
+block_af
+block_fa
+```
 
 测试集结果为：
 
@@ -491,15 +479,9 @@ $$
 
 排序是：
 
-$$
-\texttt{standard}
-<
-\texttt{parallel}
-<
-\texttt{block\_af}
-\approx
-\texttt{block\_fa},
-$$
+```text
+standard < parallel < block_af ~= block_fa
+```
 
 其中 loss 越低越好。
 
@@ -521,23 +503,23 @@ Attention-to-FFN 的系数耦合：
 $$
 \Delta_l^A
 \not\to
-c_l^F
-\quad\text{within the same layer}.
+c_l^F.
 $$
 
-它的表现介于 `standard` 和 block 版本之间，说明直接双 basis 写回和同层系数耦合
+这里指的是同一层内的 Attention-to-FFN 系数耦合。它的表现介于 `standard`
+和 block 版本之间，说明直接双 basis 写回和同层系数耦合
 都很重要。
 
 ### 7.2 新的 basis-carry 实验
 
 新实验比较四组：
 
-$$
-\texttt{standard},\quad
-\texttt{standard\_fa},\quad
-\texttt{block\_af\_carry},\quad
-\texttt{block\_fa\_carry}.
-$$
+```text
+standard
+standard_fa
+block_af_carry
+block_fa_carry
+```
 
 实验设置：
 
@@ -571,15 +553,9 @@ $$
 
 这说明：
 
-$$
-\texttt{standard}
-<
-\texttt{standard\_fa}
-\ll
-\texttt{block\_af\_carry}
-\approx
-\texttt{block\_fa\_carry}.
-$$
+```text
+standard < standard_fa << block_af_carry ~= block_fa_carry
+```
 
 `standard_fa` 只比 `standard` 差约
 
@@ -593,7 +569,7 @@ Carry 版本则差约
 
 $$
 0.0613
-\quad\text{和}\quad
+\ ,\
 0.0648.
 $$
 
@@ -603,23 +579,21 @@ $$
 
 当前结果支持以下观点：
 
-$$
-\text{标准 Transformer 的优势主要来自双直接写入，而不仅是优化稳定。}
-$$
+> 标准 Transformer 的优势主要来自双直接写入，而不仅是优化稳定。
 
 更精确地说，标准结构同时具有：
 
 $$
-\mathcal{B}^A_l(H_l)
-\quad\text{动态上下文 value/output basis},
+\mathcal{B}^A_l(H_l),
 $$
 
-以及
+即动态上下文 value/output basis；以及
 
 $$
-\mathcal{B}^F_l
-\quad\text{静态 learned FFN output basis}.
+\mathcal{B}^F_l.
 $$
+
+即静态 learned FFN output basis。
 
 但系数不是模块独立的。它们是混合 residual history 的函数：
 
@@ -627,18 +601,18 @@ $$
 c_l^A
 =
 c_l^A
-\left(
+(
 H_0,\{\Delta_s^A\}_{s<l},\{\Delta_s^F\}_{s<l}
-\right),
+),
 $$
 
 $$
 c_l^F
 =
 c_l^F
-\left(
+(
 H_0,\{\Delta_s^A\}_{s<l},\{\Delta_s^F\}_{s<l},\Delta_l^A
-\right).
+).
 $$
 
 所以标准结构不是简单的
@@ -654,22 +628,18 @@ $$
 $$
 \Delta H_l
 =
-\text{Attention-basis direct write}
+\Delta H_l^A
 +
-\text{FFN-basis direct write},
+\Delta H_l^F.
 $$
 
 同时
 
-$$
-\text{两套 coefficient 都由混合后的 residual stream 共同生成。}
-$$
+两套 coefficient 都由混合后的 residual stream 共同生成。
 
 Carry 版本保留了跨模块系数调制，却取消了一类 basis 的直接写回。因此性能下降说明：
 
-$$
-\text{仅让另一模块调制系数，不足以替代它的直接写入方向。}
-$$
+> 仅让另一模块调制系数，不足以替代它的直接写入方向。
 
 ## 9. GitHub 与服务器操作流程
 
@@ -806,15 +776,9 @@ da46115 Add enwik8 basis carry experiment results
 
 本轮实验最强的结论是：
 
-$$
-\boxed{
-\begin{gathered}
-\text{Transformer residual stream 最强的形式是：}\\
-\text{Attention 与 FFN 都能直接提供可写入的 basis，}\\
-\text{而两套 basis 的 coefficients 由混合 residual history 共同生成。}
-\end{gathered}
-}
-$$
+> Transformer residual stream 最强的形式是：Attention 与 FFN 都能直接提供
+> 可写入的 basis，而两套 basis 的 coefficients 由混合 residual history
+> 共同生成。
 
 `parallel` 说明直接双 basis 写回很重要，但同层 Attention-to-FFN 的系数耦合也有价值。
 
