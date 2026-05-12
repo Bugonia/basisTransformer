@@ -1,0 +1,2 @@
+variant,parameters,final_train_loss,final_val_loss,best_val_loss,test_loss,best_iter,stop_reason,tokens_seen,elapsed_sec,checkpoint
+standard,25587200,0.801007866859436,0.85222327709198,0.85222327709198,0.8657843470573425,30000,max_iters,3932160000,2680.192811012268,

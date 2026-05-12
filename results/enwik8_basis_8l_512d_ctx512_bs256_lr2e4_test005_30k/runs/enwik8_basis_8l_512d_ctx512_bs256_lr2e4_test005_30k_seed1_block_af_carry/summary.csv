@@ -1,0 +1,2 @@
+variant,parameters,final_train_loss,final_val_loss,best_val_loss,test_loss,best_iter,stop_reason,tokens_seen,elapsed_sec,checkpoint
+block_af_carry,25587200,0.8903868794441223,0.9111887216567993,0.9111887216567993,0.9275878071784973,30000,max_iters,3932160000,3668.1034817695618,

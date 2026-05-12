@@ -1,0 +1,40 @@
+device: cuda
+dataset chars: 100,000,000 | vocab: 205 | train: 99,000,000 | val: 500,000 | test: 500,000
+
+=== block_fa_carry ===
+parameters: 25,587,200
+iter     0 | train 5.3665 | val 5.3632 | best 5.3632 @ 0 | stale 0 | tok/s 0
+iter  1000 | train 1.7406 | val 1.7318 | best 1.7318 @ 1000 | stale 0 | tok/s 826382
+iter  2000 | train 1.2723 | val 1.2642 | best 1.2642 @ 2000 | stale 0 | tok/s 931139
+iter  3000 | train 1.1674 | val 1.1600 | best 1.1600 @ 3000 | stale 0 | tok/s 972857
+iter  4000 | train 1.1091 | val 1.1059 | best 1.1059 @ 4000 | stale 0 | tok/s 995618
+iter  5000 | train 1.0744 | val 1.0738 | best 1.0738 @ 5000 | stale 0 | tok/s 1009425
+iter  6000 | train 1.0471 | val 1.0496 | best 1.0496 @ 6000 | stale 0 | tok/s 1019316
+iter  7000 | train 1.0278 | val 1.0326 | best 1.0326 @ 7000 | stale 0 | tok/s 1026610
+iter  8000 | train 1.0112 | val 1.0191 | best 1.0191 @ 8000 | stale 0 | tok/s 1031440
+iter  9000 | train 0.9944 | val 1.0034 | best 1.0034 @ 9000 | stale 0 | tok/s 1035359
+iter 10000 | train 0.9846 | val 0.9961 | best 0.9961 @ 10000 | stale 0 | tok/s 1038438
+iter 11000 | train 0.9731 | val 0.9864 | best 0.9864 @ 11000 | stale 0 | tok/s 1041269
+iter 12000 | train 0.9635 | val 0.9786 | best 0.9786 @ 12000 | stale 0 | tok/s 1043627
+iter 13000 | train 0.9558 | val 0.9736 | best 0.9736 @ 13000 | stale 0 | tok/s 1045803
+iter 14000 | train 0.9452 | val 0.9640 | best 0.9640 @ 14000 | stale 0 | tok/s 1047651
+iter 15000 | train 0.9390 | val 0.9599 | best 0.9599 @ 15000 | stale 0 | tok/s 1049156
+iter 16000 | train 0.9332 | val 0.9549 | best 0.9549 @ 16000 | stale 0 | tok/s 1050337
+iter 17000 | train 0.9260 | val 0.9490 | best 0.9490 @ 17000 | stale 0 | tok/s 1051389
+iter 18000 | train 0.9209 | val 0.9456 | best 0.9456 @ 18000 | stale 0 | tok/s 1052451
+iter 19000 | train 0.9166 | val 0.9426 | best 0.9426 @ 19000 | stale 0 | tok/s 1053328
+iter 20000 | train 0.9128 | val 0.9389 | best 0.9389 @ 20000 | stale 0 | tok/s 1054387
+iter 21000 | train 0.9081 | val 0.9357 | best 0.9357 @ 21000 | stale 0 | tok/s 1056135
+iter 22000 | train 0.9042 | val 0.9327 | best 0.9327 @ 22000 | stale 0 | tok/s 1058026
+iter 23000 | train 0.9015 | val 0.9319 | best 0.9319 @ 23000 | stale 0 | tok/s 1058710
+iter 24000 | train 0.8984 | val 0.9291 | best 0.9291 @ 24000 | stale 0 | tok/s 1059312
+iter 25000 | train 0.8960 | val 0.9271 | best 0.9271 @ 25000 | stale 0 | tok/s 1059903
+iter 26000 | train 0.8941 | val 0.9253 | best 0.9253 @ 26000 | stale 0 | tok/s 1060454
+iter 27000 | train 0.8917 | val 0.9240 | best 0.9240 @ 27000 | stale 0 | tok/s 1060958
+iter 28000 | train 0.8897 | val 0.9222 | best 0.9222 @ 28000 | stale 0 | tok/s 1061288
+iter 29000 | train 0.8888 | val 0.9211 | best 0.9211 @ 29000 | stale 0 | tok/s 1061740
+iter 30000 | train 0.8879 | val 0.9215 | best 0.9211 @ 29000 | stale 1 | tok/s 1062180
+test loss at best-val checkpoint: 0.9379
+
+summary: runs/block_residuals/enwik8_basis_8l_512d_ctx512_bs256_lr2e4_test005_30k_seed2_block_fa_carry/summary.csv
+block_fa_carry | best_val=0.9211 | test=0.9379 | final_val=0.9215 | elapsed=3702.8s
