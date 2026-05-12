@@ -85,7 +85,7 @@ $$c^A_{l,i,r,j}(X_l) = \alpha^r_{ij}(X_l).$$
 
 Attention 的基和系数都依赖当前 residual stream。由于
 
-$$H_l = H_0 + \sum_{s<l}\Delta_s^A + \sum_{s<l}\Delta_s^F,$$
+$$H_l = H_0 + \sum_{s=0}^{l-1}\Delta_s^A + \sum_{s=0}^{l-1}\Delta_s^F,$$
 
 所以本层 Attention 的系数并不是只由 Attention 自己决定的。它是此前所有
 Attention 写入和 FFN 写入共同累积后的函数。
@@ -359,9 +359,9 @@ $$\mathcal{B}^F_l.$$
 
 但系数不是模块独立的。它们是混合 residual history 的函数：
 
-$$c_l^A = c_l^A ( H_0,\{\Delta_s^A\}_{s<l},\{\Delta_s^F\}_{s<l} ),$$
+$$c_l^A = c_l^A ( H_0,\{\Delta_s^A\}_{s=0}^{l-1},\{\Delta_s^F\}_{s=0}^{l-1} ),$$
 
-$$c_l^F = c_l^F ( H_0,\{\Delta_s^A\}_{s<l},\{\Delta_s^F\}_{s<l},\Delta_l^A ).$$
+$$c_l^F = c_l^F ( H_0,\{\Delta_s^A\}_{s=0}^{l-1},\{\Delta_s^F\}_{s=0}^{l-1},\Delta_l^A ).$$
 
 所以标准结构不是简单的
 
