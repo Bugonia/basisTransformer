@@ -14,11 +14,11 @@ residual stream 的方向、字典或 overcomplete basis。
 标准 Pre-LN Transformer block 可以写成：
 
 $$
-U_l = H_l + A_l(\operatorname{LN}(H_l)),
+U_l = H_l + A_l(\mathrm{LN}(H_l)),
 $$
 
 $$
-H_{l+1} = U_l + F_l(\operatorname{LN}(U_l)).
+H_{l+1} = U_l + F_l(\mathrm{LN}(U_l)).
 $$
 
 其中
@@ -47,11 +47,11 @@ $$
 定义
 
 $$
-\Delta_l^A = A_l(\operatorname{LN}(H_l)),
+\Delta_l^A = A_l(\mathrm{LN}(H_l)),
 $$
 
 $$
-\Delta_l^F = F_l(\operatorname{LN}(H_l+\Delta_l^A)).
+\Delta_l^F = F_l(\mathrm{LN}(H_l+\Delta_l^A)).
 $$
 
 则标准 AF block 是
@@ -85,7 +85,7 @@ $$
 令
 
 $$
-X_l = \operatorname{LN}(H_l).
+X_l = \mathrm{LN}(H_l).
 $$
 
 对某个 attention head，有
@@ -191,7 +191,7 @@ $$
 所以 FFN 的最终写入落在
 
 $$
-\operatorname{span}
+\mathrm{span}
 \left\{
 v_{l,1},\dots,v_{l,m}
 \right\}
@@ -212,7 +212,7 @@ $$
 $$
 z_i
 =
-\operatorname{LN}(H_l+\Delta_l^A)_i,
+\mathrm{LN}(H_l+\Delta_l^A)_i,
 $$
 
 因此
@@ -223,7 +223,7 @@ c^F_{l,i,k}
 \phi
 \left(
 \langle u_{l,k},
-\operatorname{LN}(H_l+\Delta_l^A)_i
+\mathrm{LN}(H_l+\Delta_l^A)_i
 \rangle
 + b_{l,k}
 \right).
@@ -278,7 +278,7 @@ H_{l+1}
 =
 H_l
 +
-F_l(\operatorname{LN}(A_l(\operatorname{LN}(H_l)))).
+F_l(\mathrm{LN}(A_l(\mathrm{LN}(H_l)))).
 $$
 
 最终写回 residual stream 的只有 FFN：
@@ -286,7 +286,7 @@ $$
 $$
 H_{l+1}-H_l
 \in
-\operatorname{span}
+\mathrm{span}
 \left\{
 v_{l,1},\dots,v_{l,m}
 \right\}.
@@ -299,11 +299,11 @@ value/output basis 不再直接写入 residual stream。
 basis，还让梯度或信息传递变难。因此加入上一层的 middle signal：
 
 $$
-a_l = A_l(\operatorname{LN}(H_l)),
+a_l = A_l(\mathrm{LN}(H_l)),
 $$
 
 $$
-a_{l-1} = A_l(\operatorname{LN}(H_{l-1})),
+a_{l-1} = A_l(\mathrm{LN}(H_{l-1})),
 $$
 
 $$
@@ -311,7 +311,7 @@ H_{l+1}
 =
 H_l
 +
-F_l(\operatorname{LN}(a_l+a_{l-1})).
+F_l(\mathrm{LN}(a_l+a_{l-1})).
 $$
 
 这就是 `block_af_carry`。它可以概括成：
@@ -334,11 +334,11 @@ FFN-basis。
 反过来，`block_fa_carry` 是
 
 $$
-f_l = F_l(\operatorname{LN}(H_l)),
+f_l = F_l(\mathrm{LN}(H_l)),
 $$
 
 $$
-f_{l-1} = F_l(\operatorname{LN}(H_{l-1})),
+f_{l-1} = F_l(\mathrm{LN}(H_{l-1})),
 $$
 
 $$
@@ -346,7 +346,7 @@ H_{l+1}
 =
 H_l
 +
-A_l(\operatorname{LN}(f_l+f_{l-1})).
+A_l(\mathrm{LN}(f_l+f_{l-1})).
 $$
 
 可写成
@@ -362,7 +362,7 @@ $$
 $$
 Y_l
 =
-\operatorname{LN}
+\mathrm{LN}
 \left(
 B^F_l c^F_l(H_l)
 +
@@ -510,9 +510,9 @@ H_{l+1}
 =
 H_l
 +
-A_l(\operatorname{LN}(H_l))
+A_l(\mathrm{LN}(H_l))
 +
-F_l(\operatorname{LN}(H_l)).
+F_l(\mathrm{LN}(H_l)).
 $$
 
 它保留了 Attention 和 FFN 的直接 basis 写回，但是去掉了同层
