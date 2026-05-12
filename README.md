@@ -329,6 +329,25 @@ done
 wait
 ```
 
+### Recorded Basis Result
+
+The first enwik8 basis run is checked in under
+[`results/enwik8_basis_8l_512d_ctx512_bs256_lr2e4_test005_30k`](results/enwik8_basis_8l_512d_ctx512_bs256_lr2e4_test005_30k/).
+It uses two seeds, an 8-layer 512-dim model, context length 512, batch size 256,
+and 30k training steps.
+
+```text
+variant          test loss          delta vs standard
+standard         0.8682 +/- 0.0035  0.0000
+standard_fa      0.8806 +/- 0.0048  +0.0124
+block_af_carry   0.9296 +/- 0.0028  +0.0613
+block_fa_carry   0.9330 +/- 0.0069  +0.0648
+```
+
+The result supports two takeaways: standard AF ordering is better than standard
+FA ordering on this setup, and the carry variants remain far behind because only
+one submodule basis writes directly back to the residual stream.
+
 ## Larger Single-GPU Runs
 
 On H100/A100-class GPUs, use bfloat16 and optionally `torch.compile` to make
