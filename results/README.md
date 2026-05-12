@@ -4,6 +4,9 @@ Curated result folders live here. Raw training outputs under `runs/` and
 `reports/` stay ignored by default; this directory is for compact artifacts that
 are useful to keep with the code.
 
+For the mathematical interpretation and exact Git/server workflow, see
+[`../docs/transformer_basis_technical_report.md`](../docs/transformer_basis_technical_report.md).
+
 ## enwik8 basis carry, 8L 512D, 30k steps
 
 - Folder:

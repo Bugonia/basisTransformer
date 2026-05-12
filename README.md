@@ -4,6 +4,9 @@ This folder contains a small PyTorch experiment for comparing four Transformer
 block topologies under the same model size, optimizer, dataset split, and
 training loop.
 
+A longer mathematical write-up and operations log is available in
+[`docs/transformer_basis_technical_report.md`](docs/transformer_basis_technical_report.md).
+
 The default implementation is Pre-LN. The equations below omit LayerNorm for
 readability; in code the default is `Norm -> submodule`.
 
