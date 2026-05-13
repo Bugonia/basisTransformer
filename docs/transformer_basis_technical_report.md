@@ -97,7 +97,8 @@ $$c^A_{l,i,r,j}(X_l) = \alpha^r_{ij}(X_l).$$
 
 $$\Delta^A_{l,i} = \sum_{r=1}^{h} \sum_{j \le i} c^A_{l,i,r,j}(X_l) \, b^A_{l,i,r,j}(X_l).$$
 
-因此 Attention 提供的是一组动态上下文基：
+在本文采用的 source-token 级分解下，Attention 提供的是一组动态上下文
+write atoms：
 
 $$\mathcal{B}^A_{l,i}(X_l) = \{ W^r_O W^r_V x_j : r=1,\dots,h,\ j \le i \}.$$
 
@@ -105,13 +106,27 @@ $$\mathcal{B}^A_{l,i}(X_l) = \{ W^r_O W^r_V x_j : r=1,\dots,h,\ j \le i \}.$$
 
 $$c^A_{l,i,r,j}(X_l) = \alpha^r_{ij}(X_l).$$
 
-注意两个容易混淆的点：
+也可以选择另一种更细的线性代数分解。令
 
-1. Attention-basis 不是单独的参数矩阵 $W_O W_V$。真正写入 residual
-   stream 的候选方向是 $W_O^r W_V^r x_j$，它还依赖当前上下文里的 token
-   表示 $x_j$。
-2. Attention-coefficient 不是固定学出来的标量。它是由 query/key 相似度
-   经过 softmax 得到的 $\alpha^r_{ij}$，会随输入、层数、位置和 head 改变。
+$$W^r_O = [o^r_1,\dots,o^r_{d_h}], \qquad W^r_V x_j = v^r_j.$$
+
+则
+
+$$W^r_O W^r_V x_j = \sum_{a=1}^{d_h} v^r_{j,a} o^r_a,$$
+
+从而
+
+$$\Delta^A_{l,i}
+= \sum_{r=1}^{h}\sum_{a=1}^{d_h}
+\left(\sum_{j\le i}\alpha^r_{ij} v^r_{j,a}\right)o^r_a.$$
+
+在这个分解中，basis 是 $W^r_O$ 的列向量 $\{o^r_a\}$，对应的是该
+head 能写入 residual stream 的静态 output subspace；系数
+$\sum_{j\le i}\alpha^r_{ij} v^r_{j,a}$ 同时混合了 attention routing
+和 value content。本文把 $W^r_O W^r_V x_j$ 称为 Attention-basis，
+是为了保留“每个 source token 提供一个候选写入方向、$\alpha^r_{ij}$
+负责选择和混合这些方向”的 routing 视角。严格说，它更像一个
+context-dependent overcomplete dictionary，而不是最小线性基。
 
 Attention 的基和系数都依赖当前 residual stream。由于
 
