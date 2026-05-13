@@ -19,10 +19,11 @@ $$H_{l+1} = U_l + F_l(\mathrm{LN}(U_l)).$$
 
 其中
 
-$$H_l \in \mathbb{R}^{T \times d}$$
+$$H_l = [h_{l,1},\dots,h_{l,T}] \in \mathbb{R}^{d \times T}$$
 
-是第 $l$ 层的 residual stream，$T$ 是 context length，$d$ 是 hidden
-dimension。
+是第 $l$ 层的 residual stream。本文的单个 token 表示均按列向量记，
+$h_{l,i}\in\mathbb{R}^d$；$T$ 是 context length，$d$ 是 hidden dimension。
+这只是数学记号，和实现中常见的 batch/sequence/hidden 张量排布无关。
 
 实验关心的问题不是简单的“残差连接是否有用”，而是更细的结构问题：
 
@@ -54,34 +55,63 @@ $$\Delta_l^A \ ,\ \Delta_l^F.$$
 
 ## 3. Attention 的基与系数
 
+先给一句直观读法：
+
+> 对 token $i$ 来说，Attention 先从所有可见位置 $j \le i$ 生成一批
+> “可以写回 residual stream 的候选向量”，再用 attention weight
+> 决定每个候选向量混入多少。
+
+这里的候选向量就是本文说的 Attention-basis；混入多少就是
+Attention-coefficient。
+
 令
 
 $$X_l = \mathrm{LN}(H_l).$$
 
+其中 $x_i \in \mathbb{R}^d$ 表示位置 $i$ 的列向量。
+
 对某个 attention head，有
 
-$$q_i = x_i W_Q, \qquad k_j = x_j W_K, \qquad v_j = x_j W_V.$$
+$$q_i = W_Q x_i, \qquad k_j = W_K x_j, \qquad v_j = W_V x_j.$$
 
 因果 attention 的系数是
 
-$$\alpha_{ij} = \frac{ \exp(q_i k_j^\top / \sqrt{d_h}) }{ \sum_{m \le i} \exp(q_i k_m^\top / \sqrt{d_h}) }, \qquad j \le i.$$
+$$\alpha_{ij} = \frac{ \exp(q_i^\top k_j / \sqrt{d_h}) }{ \sum_{m \le i} \exp(q_i^\top k_m / \sqrt{d_h}) }, \qquad j \le i.$$
 
 忽略 bias，并把该 head 的 output projection 写作 $W_O$，则 token $i$
 处的 attention 写入为
 
-$$\Delta^A_{l,i} = \sum_{j \le i} \alpha_{ij}(X_l) \, x_j W_V W_O.$$
+$$\Delta^A_{l,i} = \sum_{j \le i} \alpha_{ij}(X_l) \, W_O W_V x_j.$$
 
 多头时：
 
-$$\Delta^A_{l,i} = \sum_{r=1}^{h} \sum_{j \le i} \alpha^r_{ij}(X_l) \, x_j W^r_V W^r_O.$$
+$$\Delta^A_{l,i} = \sum_{r=1}^{h} \sum_{j \le i} \alpha^r_{ij}(X_l) \, W^r_O W^r_V x_j.$$
+
+可以把上式中的每一项拆成两部分：
+
+$$b^A_{l,i,r,j}(X_l) = W^r_O W^r_V x_j,$$
+
+$$c^A_{l,i,r,j}(X_l) = \alpha^r_{ij}(X_l).$$
+
+于是
+
+$$\Delta^A_{l,i} = \sum_{r=1}^{h} \sum_{j \le i} c^A_{l,i,r,j}(X_l) \, b^A_{l,i,r,j}(X_l).$$
 
 因此 Attention 提供的是一组动态上下文基：
 
-$$\mathcal{B}^A_{l,i}(X_l) = \{ x_j W^r_V W^r_O : r=1,\dots,h,\ j \le i \}.$$
+$$\mathcal{B}^A_{l,i}(X_l) = \{ W^r_O W^r_V x_j : r=1,\dots,h,\ j \le i \}.$$
 
 对应的系数是 routing weights：
 
 $$c^A_{l,i,r,j}(X_l) = \alpha^r_{ij}(X_l).$$
+
+注意两个容易混淆的点：
+
+1. Attention-basis 不是单独的参数矩阵 $W_O W_V$。真正写入 residual
+   stream 的候选方向是 $W_O^r W_V^r x_j$，它还依赖当前上下文里的 token
+   表示 $x_j$。
+2. Attention-coefficient 不是固定学出来的标量。它是由 query/key 相似度
+   经过 softmax 得到的 $\alpha^r_{ij}$，会随输入、层数、位置和 head 改变。
 
 Attention 的基和系数都依赖当前 residual stream。由于
 
