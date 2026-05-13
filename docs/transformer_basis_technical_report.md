@@ -55,14 +55,9 @@ $$\Delta_l^A \ ,\ \Delta_l^F.$$
 
 ## 3. Attention 的基与系数
 
-先给一句直观读法：
-
-> 对 token $i$ 来说，Attention 先从所有可见位置 $j \le i$ 生成一批
-> “可以写回 residual stream 的候选向量”，再用 attention weight
-> 决定每个候选向量混入多少。
-
-这里的候选向量就是本文说的 Attention-basis；混入多少就是
-Attention-coefficient。
+按列向量约定，Attention 的最终 residual 写入由输出矩阵 $W_O$
+完成。因此如果把“basis”定义为最终写回 residual stream 的静态方向，
+Attention-basis 就是 $W_O$ 的列向量。
 
 令
 
@@ -70,65 +65,72 @@ $$X_l = \mathrm{LN}(H_l).$$
 
 其中 $x_i \in \mathbb{R}^d$ 表示位置 $i$ 的列向量。
 
-对某个 attention head，有
+对第 $r$ 个 attention head，有
 
-$$q_i = W_Q x_i, \qquad k_j = W_K x_j, \qquad v_j = W_V x_j.$$
+$$q^r_i = W^r_Q x_i, \qquad k^r_j = W^r_K x_j, \qquad v^r_j = W^r_V x_j.$$
 
 因果 attention 的系数是
 
-$$\alpha_{ij} = \frac{ \exp(q_i^\top k_j / \sqrt{d_h}) }{ \sum_{m \le i} \exp(q_i^\top k_m / \sqrt{d_h}) }, \qquad j \le i.$$
+$$\alpha^r_{ij}
+= \frac{ \exp((q^r_i)^\top k^r_j / \sqrt{d_h}) }
+{ \sum_{m \le i} \exp((q^r_i)^\top k^r_m / \sqrt{d_h}) },
+\qquad j \le i.$$
 
-忽略 bias，并把该 head 的 output projection 写作 $W_O$，则 token $i$
-处的 attention 写入为
+第 $r$ 个 head 在 token $i$ 处先形成 head 内输出
 
-$$\Delta^A_{l,i} = \sum_{j \le i} \alpha_{ij}(X_l) \, W_O W_V x_j.$$
+$$y^r_i = \sum_{j \le i}\alpha^r_{ij}(X_l)v^r_j.$$
 
-多头时：
+多头输出先拼接：
 
-$$\Delta^A_{l,i} = \sum_{r=1}^{h} \sum_{j \le i} \alpha^r_{ij}(X_l) \, W^r_O W^r_V x_j.$$
+$$y_i = [y^1_i;\dots;y^h_i]\in\mathbb{R}^{h d_h}.$$
 
-可以把上式中的每一项拆成两部分：
+然后用同一个输出矩阵
 
-$$b^A_{l,i,r,j}(X_l) = W^r_O W^r_V x_j,$$
+$$W_O\in\mathbb{R}^{d\times h d_h}$$
 
-$$c^A_{l,i,r,j}(X_l) = \alpha^r_{ij}(X_l).$$
+写回 residual stream：
 
-于是
+$$\Delta^A_{l,i}=W_O y_i.$$
 
-$$\Delta^A_{l,i} = \sum_{r=1}^{h} \sum_{j \le i} c^A_{l,i,r,j}(X_l) \, b^A_{l,i,r,j}(X_l).$$
+为了写出每个 head 的贡献，把 $W_O$ 按 head 维度分块：
 
-在本文采用的 source-token 级分解下，Attention 提供的是一组动态上下文
-write atoms：
+$$W_O=[O_1,\dots,O_h],\qquad O_r\in\mathbb{R}^{d\times d_h}.$$
 
-$$\mathcal{B}^A_{l,i}(X_l) = \{ W^r_O W^r_V x_j : r=1,\dots,h,\ j \le i \}.$$
+这里的 $O_r$ 不是第 $r$ 个 head 独立拥有的 output projection；它只是
+同一个 $W_O$ 中对应第 $r$ 个 head 输出坐标的列块。于是
 
-对应的系数是 routing weights：
+$$\Delta^A_{l,i}
+= \sum_{r=1}^{h}O_r y^r_i
+= \sum_{r=1}^{h}\sum_{j\le i}\alpha^r_{ij}(X_l)O_r v^r_j.$$
 
-$$c^A_{l,i,r,j}(X_l) = \alpha^r_{ij}(X_l).$$
+再把每个列块写成
 
-也可以选择另一种更细的线性代数分解。令
-
-$$W^r_O = [o^r_1,\dots,o^r_{d_h}], \qquad W^r_V x_j = v^r_j.$$
+$$O_r=[o_{r,1},\dots,o_{r,d_h}],\qquad
+v^r_j=(v^r_{j,1},\dots,v^r_{j,d_h})^\top.$$
 
 则
 
-$$W^r_O W^r_V x_j = \sum_{a=1}^{d_h} v^r_{j,a} o^r_a,$$
+$$O_r v^r_j=\sum_{a=1}^{d_h}v^r_{j,a}o_{r,a},$$
 
 从而
 
 $$\Delta^A_{l,i}
 = \sum_{r=1}^{h}\sum_{a=1}^{d_h}
-\left(\sum_{j\le i}\alpha^r_{ij} v^r_{j,a}\right)o^r_a.$$
+\left(\sum_{j\le i}\alpha^r_{ij}(X_l)v^r_{j,a}\right)o_{r,a}.$$
 
-在这个分解中，basis 是 $W^r_O$ 的列向量 $\{o^r_a\}$，对应的是该
-head 能写入 residual stream 的静态 output subspace；系数
-$\sum_{j\le i}\alpha^r_{ij} v^r_{j,a}$ 同时混合了 attention routing
-和 value content。本文把 $W^r_O W^r_V x_j$ 称为 Attention-basis，
-是为了保留“每个 source token 提供一个候选写入方向、$\alpha^r_{ij}$
-负责选择和混合这些方向”的 routing 视角。严格说，它更像一个
-context-dependent overcomplete dictionary，而不是最小线性基。
+因此本文后面使用的 Attention-basis 是
 
-Attention 的基和系数都依赖当前 residual stream。由于
+$$\mathcal{B}^A_l=\{o_{r,a}:r=1,\dots,h,\ a=1,\dots,d_h\},$$
+
+也就是 $W_O$ 的列向量。对应到该 basis 的系数是
+
+$$c^A_{l,i,r,a}(X_l)=\sum_{j\le i}\alpha^r_{ij}(X_l)v^r_{j,a}.$$
+
+注意，$\alpha^r_{ij}$ 是 attention routing weight，但它不是最终
+$W_O$ 列基上的完整系数；完整系数还包含 value 分量 $v^r_{j,a}$。
+
+Attention 的 basis 是层参数中的输出方向；Attention 的系数依赖当前
+residual stream。由于
 
 $$H_l = H_0 + \sum_{s=0}^{l-1}\Delta_s^A + \sum_{s=0}^{l-1}\Delta_s^F,$$
 
@@ -170,7 +172,7 @@ $$H_l \ ,\ \Delta_l^A.$$
 
 因此标准 AF block 更准确的形式是
 
-$$\Delta H_l = B^A_l(H_l)c^A_l(H_l) + B^F_l c^F_l(H_l,\Delta_l^A).$$
+$$\Delta H_l = B^A_l c^A_l(H_l) + B^F_l c^F_l(H_l,\Delta_l^A).$$
 
 注意，这里不能写成两个彼此独立的 pair：
 
@@ -195,7 +197,7 @@ $$H_{l+1} = H_l + F_l(\mathrm{LN}(A_l(\mathrm{LN}(H_l)))).$$
 $$H_{l+1}-H_l \in \mathrm{span} \{ v_{l,1},\dots,v_{l,m} \}.$$
 
 Attention 并没有消失。它仍然参与了 FFN 系数的生成。但 Attention 的
-value/output basis 不再直接写入 residual stream。
+$W_O$ output basis 不再直接写入 residual stream。
 
 这正是 carry 实验要进一步控制的问题：朴素 block 残差也许不仅丢了直接写入
 basis，还让梯度或信息传递变难。因此加入上一层的 middle signal：
@@ -208,7 +210,7 @@ $$H_{l+1} = H_l + F_l(\mathrm{LN}(a_l+a_{l-1})).$$
 
 这就是 `block_af_carry`。它可以概括成：
 
-$$\Delta H_l^{AFc} = B^F_l c^F_l ( B^A_l(H_l)c^A_l(H_l) + B^A_l(H_{l-1})c^A_l(H_{l-1}) ).$$
+$$\Delta H_l^{AFc} = B^F_l c^F_l ( B^A_l c^A_l(H_l) + B^A_l c^A_l(H_{l-1}) ).$$
 
 这里 Attention 通过系数通道参与得很深，但最终直接写入的 basis 仍然是
 FFN-basis。
@@ -223,14 +225,14 @@ $$H_{l+1} = H_l + A_l(\mathrm{LN}(f_l+f_{l-1})).$$
 
 可写成
 
-$$\Delta H_l^{FAc} = B^A_l(Y_l)c^A_l(Y_l),$$
+$$\Delta H_l^{FAc} = B^A_l c^A_l(Y_l),$$
 
 其中
 
 $$Y_l = \mathrm{LN} ( B^F_l c^F_l(H_l) + B^F_l c^F_l(H_{l-1}) ).$$
 
 此时 FFN 参与了 Attention 的 query、key、value 和 routing coefficient 的
-生成，但最终写回仍然经过 Attention 的 value/output basis。
+生成，但最终写回仍然经过 Attention 的 $W_O$ output basis。
 
 所以 carry 实验比较的不是“是否使用另一类模块”，而是：
 
@@ -422,9 +424,9 @@ $$0.0613 \ ,\ 0.0648.$$
 
 更精确地说，标准结构同时具有：
 
-$$\mathcal{B}^A_l(H_l),$$
+$$\mathcal{B}^A_l,$$
 
-即动态上下文 value/output basis；以及
+即由 $W_O$ 列向量给出的静态 Attention output basis；以及
 
 $$\mathcal{B}^F_l.$$
 
