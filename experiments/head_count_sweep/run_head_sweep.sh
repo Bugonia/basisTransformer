@@ -28,7 +28,7 @@ LEARNING_RATE="${LEARNING_RATE:-2e-4}"
 MIN_LR="${MIN_LR:-2e-5}"
 WARMUP_ITERS="${WARMUP_ITERS:-500}"
 DTYPE="${DTYPE:-bfloat16}"
-COMPILE="${COMPILE:-1}"
+COMPILE="${COMPILE:-0}"
 
 if [[ -n "${GPUS:-}" ]]; then
   read -r -a GPU_ARRAY <<< "$GPUS"

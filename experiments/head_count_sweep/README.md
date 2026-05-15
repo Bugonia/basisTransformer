@@ -70,6 +70,13 @@ GPUS="0 1 2 3" bash experiments/head_count_sweep/run_head_sweep.sh
 脚本会按 GPU 数量分 wave 并行运行；如果 head 数多于 GPU 数，会等当前 wave 完成后
 再启动下一组。
 
+默认不启用 `torch.compile`，因为部分训练镜像没有 C compiler，Triton/Inductor
+会在启动时失败。如果确认环境里有可用编译器，可以手动打开：
+
+```bash
+COMPILE=1 bash experiments/head_count_sweep/run_head_sweep.sh
+```
+
 ## 汇总和画图
 
 运行脚本结束后会自动汇总。也可以手动执行：
