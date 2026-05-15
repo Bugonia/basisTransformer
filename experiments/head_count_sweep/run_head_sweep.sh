@@ -29,6 +29,7 @@ MIN_LR="${MIN_LR:-2e-5}"
 WARMUP_ITERS="${WARMUP_ITERS:-500}"
 DTYPE="${DTYPE:-bfloat16}"
 COMPILE="${COMPILE:-0}"
+RESUME="${RESUME:-1}"
 
 if [[ -n "${GPUS:-}" ]]; then
   read -r -a GPU_ARRAY <<< "$GPUS"
@@ -52,6 +53,17 @@ if [[ "$COMPILE" == "1" || "$COMPILE" == "true" ]]; then
 fi
 
 mkdir -p runs reports
+wave_pids=()
+wave_names=()
+
+cleanup() {
+  if [[ "${#wave_pids[@]}" -gt 0 ]]; then
+    echo "Stopping ${#wave_pids[@]} active run(s)..." >&2
+    kill "${wave_pids[@]}" 2>/dev/null || true
+  fi
+}
+
+trap cleanup INT TERM
 
 wait_wave() {
   local idx
@@ -78,10 +90,18 @@ for seed in "${SEED_ARRAY[@]}"; do
 
     gpu="${GPU_ARRAY[$slot]}"
     run_name="${BASE_RUN}_seed${seed}_h${n_head}"
+    run_dir="runs/block_residuals/${run_name}"
     log_path="runs/${run_name}.log"
 
+    if [[ "$RESUME" == "1" || "$RESUME" == "true" ]]; then
+      if [[ -s "${run_dir}/summary.csv" ]]; then
+        echo "Skipping completed ${run_name}."
+        continue
+      fi
+    fi
+
     echo "Launching ${run_name} on GPU ${gpu}."
-    CUDA_VISIBLE_DEVICES="$gpu" "$PYTHON_BIN" "$TRAIN_SCRIPT" \
+    PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES="$gpu" "$PYTHON_BIN" "$TRAIN_SCRIPT" \
       --data-file "$DATA_FILE" \
       --encoding latin-1 \
       --variant standard \

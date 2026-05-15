@@ -77,6 +77,10 @@ GPUS="0 1 2 3" bash experiments/head_count_sweep/run_head_sweep.sh
 COMPILE=1 bash experiments/head_count_sweep/run_head_sweep.sh
 ```
 
+默认 `RESUME=1`，已经写出 `summary.csv` 的 run 会被跳过，适合单 GPU 串行实验
+中断后续跑。脚本会用 `PYTHONUNBUFFERED=1` 启动训练，所以 `tail -f runs/*.log`
+可以实时看到训练输出。按 `Ctrl-C` 会停止当前 wave 中已经启动的训练子进程。
+
 ## 汇总和画图
 
 运行脚本结束后会自动汇总。也可以手动执行：
