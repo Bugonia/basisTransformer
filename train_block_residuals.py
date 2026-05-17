@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Compare Transformer residual topologies on a small character LM task.
 
-The four variants share the same attention, FFN, normalization, optimizer,
-dataset split, and parameter count. Only the way attention/FFN are wired into
-the residual stream changes.
+Most variants share the same attention, FFN, normalization, optimizer, dataset
+split, and parameter count. The W_O absorption variants intentionally change
+the attention parameterization to test whether the output projection is needed
+inside block-AF when no middle nonlinearity separates attention from the FFN.
 """
 
 from __future__ import annotations
@@ -33,10 +34,17 @@ TINY_SHAKESPEARE_URL = (
 )
 LEGACY_VARIANTS = ("standard", "block_af", "block_fa", "parallel")
 BASIS_VARIANTS = ("standard", "standard_fa", "block_af_carry", "block_fa_carry")
+WO_ABSORPTION_VARIANTS = (
+    "block_af",
+    "block_af_no_mid_ln",
+    "block_af_no_mid_ln_no_wo",
+)
 VARIANTS = (
     "standard",
     "standard_fa",
     "block_af",
+    "block_af_no_mid_ln",
+    "block_af_no_mid_ln_no_wo",
     "block_fa",
     "block_af_carry",
     "block_fa_carry",
@@ -58,14 +66,18 @@ class ModelConfig:
 
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self, config: ModelConfig):
+    def __init__(self, config: ModelConfig, use_output_projection: bool = True):
         super().__init__()
         if config.n_embd % config.n_head != 0:
             raise ValueError("n_embd must be divisible by n_head")
         self.n_head = config.n_head
         self.dropout_p = config.dropout
         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
-        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        self.c_proj = (
+            nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+            if use_output_projection
+            else nn.Identity()
+        )
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
         self.flash = hasattr(F, "scaled_dot_product_attention")
@@ -141,7 +153,8 @@ class Block(nn.Module):
         self.use_norm = config.norm == "pre"
         self.ln1 = LayerNorm(config.n_embd, bias=config.bias)
         self.ln2 = LayerNorm(config.n_embd, bias=config.bias)
-        self.attn = CausalSelfAttention(config)
+        use_wo = config.variant != "block_af_no_mid_ln_no_wo"
+        self.attn = CausalSelfAttention(config, use_output_projection=use_wo)
         self.ffn = FeedForward(config)
 
     def n1(self, x: torch.Tensor) -> torch.Tensor:
@@ -167,6 +180,18 @@ class Block(nn.Module):
             # h_next = h + FFN(Attn(h)); with optional Pre-LN around each submodule.
             a = self.attn(self.n1(x))
             return x + self.ffn(self.n2(a))
+
+        if self.variant == "block_af_no_mid_ln":
+            # h_next = h + FFN(Attn(LN(h))). No LN/dropout-removable nonlinear op
+            # is inserted between the attention output projection and FFN.
+            a = self.attn(self.n1(x))
+            return x + self.ffn(a)
+
+        if self.variant == "block_af_no_mid_ln_no_wo":
+            # Same as block_af_no_mid_ln, but attention omits W_O/c_proj.
+            # With dropout=0, W_O is algebraically absorbable into FFN W_1.
+            a = self.attn(self.n1(x))
+            return x + self.ffn(a)
 
         if self.variant == "block_fa":
             # h_next = h + Attn(FFN(h)); with optional Pre-LN around each submodule.
@@ -597,10 +622,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--variant",
-        choices=("all", "basis", "all_variants") + VARIANTS,
+        choices=("all", "basis", "wo_absorption", "all_variants") + VARIANTS,
         default="all",
         help="'all' runs the legacy four variants; 'basis' runs the new basis "
-        "suite; 'all_variants' runs every implemented variant.",
+        "suite; 'wo_absorption' compares block-AF variants with/without W_O; "
+        "'all_variants' runs every implemented variant.",
     )
     parser.add_argument("--norm", choices=("pre", "none"), default="pre")
     parser.add_argument(
@@ -707,6 +733,8 @@ def main() -> None:
         variants = list(LEGACY_VARIANTS)
     elif args.variant == "basis":
         variants = list(BASIS_VARIANTS)
+    elif args.variant == "wo_absorption":
+        variants = list(WO_ABSORPTION_VARIANTS)
     elif args.variant == "all_variants":
         variants = list(VARIANTS)
     else:

@@ -21,6 +21,8 @@ VARIANTS = (
     "standard",
     "standard_fa",
     "block_af",
+    "block_af_no_mid_ln",
+    "block_af_no_mid_ln_no_wo",
     "block_fa",
     "block_af_carry",
     "block_fa_carry",
