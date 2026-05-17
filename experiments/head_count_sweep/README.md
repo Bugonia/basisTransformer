@@ -116,3 +116,12 @@ BASE_RUN=enwik8_head_sweep_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k
   wall-clock time 当成模型质量。
 - 建议在支持 PyTorch scaled-dot-product attention 的 CUDA 环境运行。没有 flash
   / SDPA 时，高 head 数加长 context 可能很慢或 OOM。
+
+## Recorded Result
+
+The first full enwik8 sweep is checked in under
+[`../../results/enwik8_head_sweep_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k`](../../results/enwik8_head_sweep_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k/).
+It uses two seeds and the default 8L/512D/ctx512/batch256/30k setup.
+
+The test-loss curve is U-shaped: 16 heads is best, 8 heads is very close, and
+very high head counts degrade sharply as `head_dim` becomes too small.

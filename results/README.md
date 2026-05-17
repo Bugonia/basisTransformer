@@ -23,3 +23,23 @@ standard_fa    test 0.8806   +0.0124 vs standard
 block_af_carry test 0.9296   +0.0613 vs standard
 block_fa_carry test 0.9330   +0.0648 vs standard
 ```
+
+## enwik8 attention head sweep, 8L 512D, 30k steps
+
+- Folder:
+  [`enwik8_head_sweep_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k`](enwik8_head_sweep_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k/)
+- Main result: with fixed `d_model = 512` and matched parameter count, the
+  head-count curve is U-shaped. The best point is 16 heads, with 8 heads very
+  close; very high head counts degrade sharply because each head has too little
+  value/output capacity.
+
+```text
+heads  head_dim  test loss
+1      512       0.8905
+4      128       0.8712
+8      64        0.8691
+16     32        0.8675
+32     16        0.8715
+64     8         0.8807
+512    1         0.9343
+```
