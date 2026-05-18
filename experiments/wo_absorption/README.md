@@ -56,6 +56,22 @@ batch256/30k steps/lr2e-4/test split 0.005。默认设置 `DROPOUT=0.0`，这是
 bash experiments/wo_absorption/run_wo_absorption.sh
 ```
 
+如果要检查 30k 固定步数是否没有训练到收敛，使用 long-run 版本：
+
+```bash
+bash experiments/wo_absorption/run_wo_absorption_long.sh
+```
+
+这个包装脚本只改训练预算和停止条件：
+
+```text
+MAX_ITERS=100000
+EARLY_STOP_PATIENCE=10
+BASE_RUN=enwik8_wo_absorption_8l_512d_ctx512_bs256_lr2e4_test005_drop0_100k_earlystop10
+```
+
+其它模型规模、数据切分、batch size、学习率和 variant 列表保持不变。
+
 默认测试：
 
 ```text
