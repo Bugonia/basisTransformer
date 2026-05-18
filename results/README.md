@@ -44,17 +44,20 @@ heads  head_dim  test loss
 512    1         0.9343
 ```
 
-## enwik8 block-AF W_O absorption, 8L 512D, 30k steps
+## enwik8 block-AF W_O absorption, 8L 512D, long run
 
 - Folder:
+  [`enwik8_wo_absorption_8l_512d_ctx512_bs256_lr2e4_test005_drop0_100k_earlystop10`](enwik8_wo_absorption_8l_512d_ctx512_bs256_lr2e4_test005_drop0_100k_earlystop10/)
+- Earlier fixed-step run:
   [`enwik8_wo_absorption_8l_512d_ctx512_bs256_lr2e4_test005_drop0_30k`](enwik8_wo_absorption_8l_512d_ctx512_bs256_lr2e4_test005_drop0_30k/)
-- Main result: in the no-middle-LN block-AF topology, removing `W_O` saves
-  2.10M parameters and improves test loss versus keeping the redundant
-  projection. The original `block_af` with middle LN is still strongest.
+- Main result: after training to early stopping, removing `W_O` in the
+  no-middle-LN block-AF topology saves 2.10M parameters and is essentially
+  quality-neutral, with a small test-loss improvement. The original `block_af`
+  with middle LN is still clearly strongest.
 
 ```text
 variant                    params   test loss
-block_af                   25.59M   0.9233
-block_af_no_mid_ln         25.59M   0.9572
-block_af_no_mid_ln_no_wo   23.49M   0.9416
+block_af                   25.59M   0.9216
+block_af_no_mid_ln         25.59M   0.9411
+block_af_no_mid_ln_no_wo   23.49M   0.9389
 ```

@@ -1,0 +1,3 @@
+variant,best_val_loss_delta,n,test_loss_delta
+block_af,-0.0196 +/- 0.0065,2,-0.0195 +/- 0.0075
+block_af_no_mid_ln_no_wo,-0.0055 +/- 0.0006,2,-0.0022 +/- 0.0000

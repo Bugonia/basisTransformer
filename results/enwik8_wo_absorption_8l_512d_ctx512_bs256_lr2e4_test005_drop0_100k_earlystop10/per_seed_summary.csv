@@ -1,0 +1,7 @@
+variant,seed,best_val_loss,test_loss,best_iter,stop_reason
+block_af,1,0.9013761281967163,0.913933277130127,30000,early_stop_patience_10
+block_af_no_mid_ln,1,0.9256073832511902,0.938729465007782,43000,early_stop_patience_10
+block_af_no_mid_ln_no_wo,1,0.9196887016296387,0.9365781545639038,29000,early_stop_patience_10
+block_af,2,0.912115216255188,0.9292291402816772,29000,early_stop_patience_10
+block_af_no_mid_ln,2,0.9271117448806763,0.9434526562690735,48000,early_stop_patience_10
+block_af_no_mid_ln_no_wo,2,0.9221082925796509,0.9412629008293152,43000,early_stop_patience_10

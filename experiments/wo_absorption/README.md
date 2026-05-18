@@ -144,19 +144,22 @@ python plot_results_svg.py \
 
 ## Recorded Result
 
-The first full enwik8 run is checked in under
+The first full enwik8 30k run is checked in under
 [`../../results/enwik8_wo_absorption_8l_512d_ctx512_bs256_lr2e4_test005_drop0_30k`](../../results/enwik8_wo_absorption_8l_512d_ctx512_bs256_lr2e4_test005_drop0_30k/).
 
-The no-`W_O` variant saves 2.10M parameters and improves over the same no-mid-LN
-variant that keeps `W_O`:
+A longer 100k/early-stop run is checked in under
+[`../../results/enwik8_wo_absorption_8l_512d_ctx512_bs256_lr2e4_test005_drop0_100k_earlystop10`](../../results/enwik8_wo_absorption_8l_512d_ctx512_bs256_lr2e4_test005_drop0_100k_earlystop10/).
+
+In the longer run, the no-`W_O` variant saves 2.10M parameters and remains
+slightly better than the same no-mid-LN variant that keeps `W_O`:
 
 ```text
-block_af_no_mid_ln        test 0.9572
-block_af_no_mid_ln_no_wo  test 0.9416
+block_af_no_mid_ln        test 0.9411
+block_af_no_mid_ln_no_wo  test 0.9389
 ```
 
 The original `block_af` with middle LN is still best:
 
 ```text
-block_af                  test 0.9233
+block_af                  test 0.9216
 ```
