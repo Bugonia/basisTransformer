@@ -125,3 +125,22 @@ python plot_results_svg.py \
   或有限训练步数仍然让这个冗余参数有优化价值。
 - 这个结论不能直接推广到标准 Transformer，因为标准结构中 Attention 需要直接写回
   residual stream，`W_O` 本身就是 Attention-basis 的最终出口。
+
+## Recorded Result
+
+The first full enwik8 run is checked in under
+[`../../results/enwik8_wo_absorption_8l_512d_ctx512_bs256_lr2e4_test005_drop0_30k`](../../results/enwik8_wo_absorption_8l_512d_ctx512_bs256_lr2e4_test005_drop0_30k/).
+
+The no-`W_O` variant saves 2.10M parameters and improves over the same no-mid-LN
+variant that keeps `W_O`:
+
+```text
+block_af_no_mid_ln        test 0.9572
+block_af_no_mid_ln_no_wo  test 0.9416
+```
+
+The original `block_af` with middle LN is still best:
+
+```text
+block_af                  test 0.9233
+```
