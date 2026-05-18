@@ -63,6 +63,7 @@ class ModelConfig:
     bias: bool = True
     variant: str = "standard"
     norm: str = "pre"
+    norm_kind: str = "layernorm"
 
 
 class CausalSelfAttention(nn.Module):
@@ -142,76 +143,124 @@ class LayerNorm(nn.Module):
         return F.layer_norm(x, self.weight.shape, self.weight, self.bias, 1e-5)
 
 
+class RMSNorm(nn.Module):
+    """RMSNorm without mean centering."""
+
+    def __init__(self, ndim: int):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(ndim))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.weight * x * torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + 1e-5)
+
+
+def make_norm(ndim: int, bias: bool, norm_kind: str) -> nn.Module:
+    if norm_kind == "layernorm":
+        return LayerNorm(ndim, bias=bias)
+    if norm_kind == "rmsnorm":
+        return RMSNorm(ndim)
+    raise ValueError(f"Unknown norm_kind {norm_kind!r}")
+
+
 class Block(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
         if config.variant not in VARIANTS:
             raise ValueError(f"Unknown variant {config.variant!r}")
-        if config.norm not in ("pre", "none"):
-            raise ValueError("norm must be 'pre' or 'none'")
+        if config.norm not in ("pre", "post", "both", "none"):
+            raise ValueError("norm must be 'pre', 'post', 'both', or 'none'")
         self.variant = config.variant
-        self.use_norm = config.norm == "pre"
-        self.ln1 = LayerNorm(config.n_embd, bias=config.bias)
-        self.ln2 = LayerNorm(config.n_embd, bias=config.bias)
+        self.pre_norm = config.norm in ("pre", "both")
+        self.post_norm = config.norm in ("post", "both")
+        self.ln1 = (
+            make_norm(config.n_embd, config.bias, config.norm_kind)
+            if self.pre_norm
+            else nn.Identity()
+        )
+        self.ln2 = (
+            make_norm(config.n_embd, config.bias, config.norm_kind)
+            if self.pre_norm
+            else nn.Identity()
+        )
+        self.post_ln1 = (
+            make_norm(config.n_embd, config.bias, config.norm_kind)
+            if self.post_norm
+            else nn.Identity()
+        )
+        self.post_ln2 = (
+            make_norm(config.n_embd, config.bias, config.norm_kind)
+            if self.post_norm
+            else nn.Identity()
+        )
         use_wo = config.variant != "block_af_no_mid_ln_no_wo"
         self.attn = CausalSelfAttention(config, use_output_projection=use_wo)
         self.ffn = FeedForward(config)
 
     def n1(self, x: torch.Tensor) -> torch.Tensor:
-        return self.ln1(x) if self.use_norm else x
+        return self.ln1(x)
 
     def n2(self, x: torch.Tensor) -> torch.Tensor:
-        return self.ln2(x) if self.use_norm else x
+        return self.ln2(x)
+
+    def p1(self, x: torch.Tensor) -> torch.Tensor:
+        return self.post_ln1(x)
+
+    def p2(self, x: torch.Tensor) -> torch.Tensor:
+        return self.post_ln2(x)
 
     def forward(
         self, x: torch.Tensor, prev_x: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         if self.variant == "standard":
             x = x + self.attn(self.n1(x))
+            x = self.p1(x)
             x = x + self.ffn(self.n2(x))
+            x = self.p2(x)
             return x
 
         if self.variant == "standard_fa":
             x = x + self.ffn(self.n1(x))
+            x = self.p1(x)
             x = x + self.attn(self.n2(x))
+            x = self.p2(x)
             return x
 
         if self.variant == "block_af":
             # h_next = h + FFN(Attn(h)); with optional Pre-LN around each submodule.
             a = self.attn(self.n1(x))
-            return x + self.ffn(self.n2(a))
+            return self.p2(x + self.ffn(self.n2(a)))
 
         if self.variant == "block_af_no_mid_ln":
             # h_next = h + FFN(Attn(LN(h))). No LN/dropout-removable nonlinear op
             # is inserted between the attention output projection and FFN.
             a = self.attn(self.n1(x))
-            return x + self.ffn(a)
+            return self.p2(x + self.ffn(a))
 
         if self.variant == "block_af_no_mid_ln_no_wo":
             # Same as block_af_no_mid_ln, but attention omits W_O/c_proj.
             # With dropout=0, W_O is algebraically absorbable into FFN W_1.
             a = self.attn(self.n1(x))
-            return x + self.ffn(a)
+            return self.p2(x + self.ffn(a))
 
         if self.variant == "block_fa":
             # h_next = h + Attn(FFN(h)); with optional Pre-LN around each submodule.
             f = self.ffn(self.n1(x))
-            return x + self.attn(self.n2(f))
+            return self.p2(x + self.attn(self.n2(f)))
 
         if self.variant == "block_af_carry":
             prev = torch.zeros_like(x) if prev_x is None else prev_x
             a = self.attn(self.n1(x))
             a_prev = self.attn(self.n1(prev))
-            return x + self.ffn(self.n2(a + a_prev))
+            return self.p2(x + self.ffn(self.n2(a + a_prev)))
 
         if self.variant == "block_fa_carry":
             prev = torch.zeros_like(x) if prev_x is None else prev_x
             f = self.ffn(self.n1(x))
             f_prev = self.ffn(self.n1(prev))
-            return x + self.attn(self.n2(f + f_prev))
+            return self.p2(x + self.attn(self.n2(f + f_prev)))
 
         if self.variant == "parallel":
-            return x + self.attn(self.n1(x)) + self.ffn(self.n2(x))
+            return self.p2(x + self.attn(self.n1(x)) + self.ffn(self.n2(x)))
 
         raise AssertionError("unreachable")
 
@@ -226,8 +275,8 @@ class TinyGPT(nn.Module):
                 wpe=nn.Embedding(config.block_size, config.n_embd),
                 drop=nn.Dropout(config.dropout),
                 h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
-                ln_f=LayerNorm(config.n_embd, bias=config.bias)
-                if config.norm == "pre"
+                ln_f=make_norm(config.n_embd, config.bias, config.norm_kind)
+                if config.norm in ("pre", "both")
                 else nn.Identity(),
             )
         )
@@ -628,7 +677,20 @@ def parse_args() -> argparse.Namespace:
         "suite; 'wo_absorption' compares block-AF variants with/without W_O; "
         "'all_variants' runs every implemented variant.",
     )
-    parser.add_argument("--norm", choices=("pre", "none"), default="pre")
+    parser.add_argument(
+        "--norm",
+        choices=("pre", "post", "both", "none"),
+        default="pre",
+        help="Norm placement: pre applies before sublayers, post after residual "
+        "updates, both applies both, none disables block/final norms.",
+    )
+    parser.add_argument(
+        "--norm-kind",
+        choices=("layernorm", "rmsnorm"),
+        default="layernorm",
+        help="Normalization implementation. Existing results use layernorm; "
+        "new norm-placement experiments use rmsnorm.",
+    )
     parser.add_argument(
         "--dataset", choices=("tiny_shakespeare", "synthetic"), default="tiny_shakespeare"
     )
@@ -728,6 +790,7 @@ def main() -> None:
         dropout=args.dropout,
         bias=args.bias,
         norm=args.norm,
+        norm_kind=args.norm_kind,
     )
     if args.variant == "all":
         variants = list(LEGACY_VARIANTS)
