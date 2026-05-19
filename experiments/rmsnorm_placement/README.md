@@ -1,8 +1,10 @@
 # Norm Placement Experiment
 
 这个实验测试标准 Transformer 中 normalization 的位置。默认使用和之前标准
-Transformer 主实验一致的 mean-centering `LayerNorm`，这样 loss、收敛速度和 30k
-主实验可以直接对比；如果需要复现实验性 RMSNorm 版本，可以用环境变量切换。
+Transformer 主实验一致的 mean-centering `LayerNorm`。默认把最大训练步数提高到
+100k 并启用 early stopping，但学习率仍按之前 30k 主实验衰减完，这样保留原来的
+收敛速度，同时允许 post/both norm 多训练一段；如果需要复现实验性 RMSNorm 版本，
+可以用环境变量切换。
 
 ```text
 pre   x = x + Attn(Norm(x)); x = x + FFN(Norm(x)); final Norm
@@ -15,7 +17,8 @@ both  x = Norm(x + Attn(Norm(x)));
 
 ## 运行
 
-默认配置对齐之前 enwik8 8L/512D/ctx512/batch256/30k 主实验：
+默认配置对齐之前 enwik8 8L/512D/ctx512/batch256 主实验的学习率 schedule，同时给
+难训练的 norm placement 留出更长上限：
 
 ```text
 variant = standard
@@ -26,8 +29,9 @@ n_head = 8
 n_embd = 512
 block_size = 512
 batch_size = 256
-max_iters = 30000
+max_iters = 100000
 lr_decay_iters = 30000
+early_stop_patience = 10
 dropout = 0.1
 seeds = 1, 2
 ```
@@ -59,7 +63,7 @@ COMPILE=1 bash experiments/rmsnorm_placement/run_rmsnorm_placement.sh
 ## 监控
 
 ```bash
-BASE_RUN=enwik8_layernorm_placement_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k
+BASE_RUN=enwik8_layernorm_placement_standard_8l_512d_ctx512_bs256_lr2e4_test005_100k_earlystop10_lrdecay30k
 
 python monitor_runs.py \
   --base-run "$BASE_RUN" \
@@ -78,7 +82,7 @@ reports/${BASE_RUN}_aggregate.csv
 也可以手动汇总：
 
 ```bash
-BASE_RUN=enwik8_layernorm_placement_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k
+BASE_RUN=enwik8_layernorm_placement_standard_8l_512d_ctx512_bs256_lr2e4_test005_100k_earlystop10_lrdecay30k
 
 python experiments/rmsnorm_placement/summarize_rmsnorm_placement.py \
   "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
