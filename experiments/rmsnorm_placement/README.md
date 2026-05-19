@@ -1,16 +1,17 @@
-# RMSNorm Placement Experiment
+# Norm Placement Experiment
 
-这个实验专门测试标准 Transformer 中 RMSNorm 的位置：
+这个实验测试标准 Transformer 中 normalization 的位置。默认使用和之前标准
+Transformer 主实验一致的 mean-centering `LayerNorm`，这样 loss、收敛速度和 30k
+主实验可以直接对比；如果需要复现实验性 RMSNorm 版本，可以用环境变量切换。
 
 ```text
-pre   x = x + Attn(RMSNorm(x)); x = x + FFN(RMSNorm(x)); final RMSNorm
-post  x = RMSNorm(x + Attn(x)); x = RMSNorm(x + FFN(x))
-both  x = RMSNorm(x + Attn(RMSNorm(x)));
-      x = RMSNorm(x + FFN(RMSNorm(x))); final RMSNorm
+pre   x = x + Attn(Norm(x)); x = x + FFN(Norm(x)); final Norm
+post  x = Norm(x + Attn(x)); x = Norm(x + FFN(x))
+both  x = Norm(x + Attn(Norm(x)));
+      x = Norm(x + FFN(Norm(x))); final Norm
 ```
 
-这里的 norm 指 RMSNorm，不是 mean-centering LayerNorm。实验先只测标准 AF
-Transformer，避免和 block/carry 拓扑混在一起。
+实验先只测标准 AF Transformer，避免和 block/carry 拓扑混在一起。
 
 ## 运行
 
@@ -18,7 +19,7 @@ Transformer，避免和 block/carry 拓扑混在一起。
 
 ```text
 variant = standard
-norm_kind = rmsnorm
+norm_kind = layernorm
 norm = pre, post, both
 n_layer = 8
 n_head = 8
@@ -26,6 +27,8 @@ n_embd = 512
 block_size = 512
 batch_size = 256
 max_iters = 30000
+lr_decay_iters = 30000
+dropout = 0.1
 seeds = 1, 2
 ```
 
@@ -41,6 +44,12 @@ bash experiments/rmsnorm_placement/run_rmsnorm_placement.sh
 GPUS="0 1 2 3" bash experiments/rmsnorm_placement/run_rmsnorm_placement.sh
 ```
 
+复现实验性 RMSNorm 版本时显式指定：
+
+```bash
+NORM_KIND=rmsnorm bash experiments/rmsnorm_placement/run_rmsnorm_placement.sh
+```
+
 默认不启用 `torch.compile`，避免没有 C compiler 的训练镜像失败。确认环境支持后可打开：
 
 ```bash
@@ -50,7 +59,7 @@ COMPILE=1 bash experiments/rmsnorm_placement/run_rmsnorm_placement.sh
 ## 监控
 
 ```bash
-BASE_RUN=enwik8_rmsnorm_placement_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k
+BASE_RUN=enwik8_layernorm_placement_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k
 
 python monitor_runs.py \
   --base-run "$BASE_RUN" \
@@ -69,7 +78,7 @@ reports/${BASE_RUN}_aggregate.csv
 也可以手动汇总：
 
 ```bash
-BASE_RUN=enwik8_rmsnorm_placement_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k
+BASE_RUN=enwik8_layernorm_placement_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k
 
 python experiments/rmsnorm_placement/summarize_rmsnorm_placement.py \
   "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
@@ -81,7 +90,9 @@ python experiments/rmsnorm_placement/summarize_rmsnorm_placement.py \
 
 - `pre` 是现代 decoder-only Transformer 最常见的稳定训练形式。
 - `post` 更接近原始 Transformer 的 residual 后归一化，深层训练可能更难。
-- `both` 同时有 pre 和 post RMSNorm，参数量略多，但可以测试“读入稳定”和“写回稳定”
+- `both` 同时有 pre 和 post Norm，参数量略多，但可以测试“读入稳定”和“写回稳定”
   是否叠加有益。
-- 因为 `both` 多了 RMSNorm 参数，严格说不是完全参数量 matched，但差异相比 25M
+- 因为 `both` 多了 Norm 参数，严格说不是完全参数量 matched，但差异相比 25M
   级别模型很小。
+- 这个目录名保留了最初的 `rmsnorm_placement` 命名，但当前默认已经切回
+  `LayerNorm`。

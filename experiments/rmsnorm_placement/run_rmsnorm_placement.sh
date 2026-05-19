@@ -4,10 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-BASE_RUN="${BASE_RUN:-enwik8_rmsnorm_placement_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k}"
 PYTHON_BIN="${PYTHON_BIN:-.venv_cu128/bin/python}"
 TRAIN_SCRIPT="${TRAIN_SCRIPT:-train_block_residuals.py}"
 DATA_FILE="${DATA_FILE:-data/enwik8.txt}"
+NORM_KIND="${NORM_KIND:-layernorm}"
+BASE_RUN="${BASE_RUN:-enwik8_${NORM_KIND}_placement_standard_8l_512d_ctx512_bs256_lr2e4_test005_30k}"
 
 NORMS_STRING="${NORMS:-pre post both}"
 SEEDS_STRING="${SEEDS:-1 2}"
@@ -20,6 +21,7 @@ N_EMBD="${N_EMBD:-512}"
 BATCH_SIZE="${BATCH_SIZE:-256}"
 BLOCK_SIZE="${BLOCK_SIZE:-512}"
 MAX_ITERS="${MAX_ITERS:-30000}"
+LR_DECAY_ITERS="${LR_DECAY_ITERS:-$MAX_ITERS}"
 EVAL_INTERVAL="${EVAL_INTERVAL:-1000}"
 EVAL_ITERS="${EVAL_ITERS:-20}"
 EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-0}"
@@ -100,7 +102,7 @@ for seed in "${SEED_ARRAY[@]}"; do
       --encoding latin-1 \
       --variant standard \
       --norm "$norm" \
-      --norm-kind rmsnorm \
+      --norm-kind "$NORM_KIND" \
       --run-name "$run_name" \
       --seed "$seed" \
       --max-iters "$MAX_ITERS" \
@@ -118,6 +120,7 @@ for seed in "${SEED_ARRAY[@]}"; do
       --learning-rate "$LEARNING_RATE" \
       --min-lr "$MIN_LR" \
       --warmup-iters "$WARMUP_ITERS" \
+      --lr-decay-iters "$LR_DECAY_ITERS" \
       --dtype "$DTYPE" \
       "${compile_args[@]}" \
       > "$log_path" 2>&1 &

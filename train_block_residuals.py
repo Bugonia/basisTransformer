@@ -688,8 +688,8 @@ def parse_args() -> argparse.Namespace:
         "--norm-kind",
         choices=("layernorm", "rmsnorm"),
         default="layernorm",
-        help="Normalization implementation. Existing results use layernorm; "
-        "new norm-placement experiments use rmsnorm.",
+        help="Normalization implementation. Existing standard results use layernorm; "
+        "set rmsnorm explicitly for RMSNorm ablations.",
     )
     parser.add_argument(
         "--dataset", choices=("tiny_shakespeare", "synthetic"), default="tiny_shakespeare"
