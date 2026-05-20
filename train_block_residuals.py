@@ -162,6 +162,120 @@ def make_norm(ndim: int, bias: bool, norm_kind: str) -> nn.Module:
     raise ValueError(f"Unknown norm_kind {norm_kind!r}")
 
 
+def zeropower_via_newton_schulz5(
+    update: torch.Tensor,
+    steps: int = 5,
+    eps: float = 1e-7,
+) -> torch.Tensor:
+    """Approximate the zeroth power used by Muon for matrix updates."""
+
+    if update.ndim < 2:
+        raise ValueError("Muon orthogonalization expects at least 2D tensors")
+
+    original_shape = update.shape
+    matrix = update.flatten(1) if update.ndim > 2 else update
+    if matrix.norm() <= eps:
+        return torch.zeros_like(update)
+
+    x = matrix.bfloat16() if matrix.is_cuda else matrix.float()
+    transposed = x.size(0) > x.size(1)
+    if transposed:
+        x = x.T
+
+    x = x / (x.norm() + eps)
+    a, b, c = 3.4445, -4.7750, 2.0315
+    for _ in range(steps):
+        xx_t = x @ x.T
+        x = a * x + (b * xx_t + c * (xx_t @ xx_t)) @ x
+
+    if transposed:
+        x = x.T
+    return x.reshape(original_shape).to(update.dtype)
+
+
+class Muon(torch.optim.Optimizer):
+    """Muon optimizer for hidden matrix parameters.
+
+    Non-matrix parameters are intentionally handled by AdamW in
+    ``configure_optimizers`` below.
+    """
+
+    def __init__(
+        self,
+        params: Iterable[torch.nn.Parameter],
+        lr: float,
+        weight_decay: float = 0.0,
+        momentum: float = 0.95,
+        nesterov: bool = True,
+        ns_steps: int = 5,
+    ):
+        defaults = dict(
+            lr=lr,
+            lr_scale=1.0,
+            weight_decay=weight_decay,
+            momentum=momentum,
+            nesterov=nesterov,
+            ns_steps=ns_steps,
+        )
+        super().__init__(params, defaults)
+
+    @torch.no_grad()
+    def step(self, closure=None):  # type: ignore[override]
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+
+        for group in self.param_groups:
+            lr = group["lr"]
+            weight_decay = group["weight_decay"]
+            momentum = group["momentum"]
+            nesterov = group["nesterov"]
+            ns_steps = group["ns_steps"]
+            for p in group["params"]:
+                grad = p.grad
+                if grad is None:
+                    continue
+                if grad.ndim < 2:
+                    raise ValueError("Muon should only receive matrix-like parameters")
+
+                if weight_decay:
+                    p.mul_(1 - lr * weight_decay)
+
+                state = self.state[p]
+                if "momentum_buffer" not in state:
+                    state["momentum_buffer"] = torch.zeros_like(grad)
+                buf = state["momentum_buffer"]
+                buf.lerp_(grad, 1 - momentum)
+                update = grad.lerp(buf, momentum) if nesterov else buf
+                update = zeropower_via_newton_schulz5(update, steps=ns_steps)
+
+                matrix = p.flatten(1) if p.ndim > 2 else p
+                fan_out, fan_in = matrix.shape
+                update_scale = math.sqrt(max(1.0, fan_out / fan_in))
+                p.add_(update, alpha=-lr * update_scale)
+
+        return loss
+
+
+class OptimizerChain:
+    """Small wrapper for stepping Muon and AdamW fallback groups together."""
+
+    def __init__(self, *optimizers: torch.optim.Optimizer):
+        self.optimizers = list(optimizers)
+        self.param_groups = [
+            group for optimizer in self.optimizers for group in optimizer.param_groups
+        ]
+
+    def zero_grad(self, set_to_none: bool = False) -> None:
+        for optimizer in self.optimizers:
+            optimizer.zero_grad(set_to_none=set_to_none)
+
+    def step(self) -> None:
+        for optimizer in self.optimizers:
+            optimizer.step()
+
+
 class Block(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
@@ -322,20 +436,91 @@ class TinyGPT(nn.Module):
         learning_rate: float,
         betas: Tuple[float, float],
         device_type: str,
-    ) -> torch.optim.Optimizer:
+        optimizer_name: str = "adamw",
+        muon_momentum: float = 0.95,
+        muon_nesterov: bool = True,
+        muon_ns_steps: int = 5,
+        adamw_fallback_learning_rate: Optional[float] = None,
+    ) -> torch.optim.Optimizer | OptimizerChain:
         param_dict = {pn: p for pn, p in self.named_parameters() if p.requires_grad}
-        decay_params = [p for _, p in param_dict.items() if p.dim() >= 2]
-        nodecay_params = [p for _, p in param_dict.items() if p.dim() < 2]
-        optim_groups = [
-            {"params": decay_params, "weight_decay": weight_decay},
-            {"params": nodecay_params, "weight_decay": 0.0},
-        ]
         fused_available = "fused" in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and device_type == "cuda"
         extra_args = {"fused": True} if use_fused else {}
-        return torch.optim.AdamW(
-            optim_groups, lr=learning_rate, betas=betas, **extra_args
-        )
+
+        if optimizer_name == "adamw":
+            decay_params = [p for _, p in param_dict.items() if p.dim() >= 2]
+            nodecay_params = [p for _, p in param_dict.items() if p.dim() < 2]
+            optim_groups = [
+                {"params": decay_params, "weight_decay": weight_decay},
+                {"params": nodecay_params, "weight_decay": 0.0},
+            ]
+            return torch.optim.AdamW(
+                optim_groups, lr=learning_rate, betas=betas, **extra_args
+            )
+
+        if optimizer_name == "muon":
+            muon_params = []
+            adamw_decay_params = []
+            adamw_nodecay_params = []
+            for name, param in param_dict.items():
+                is_embedding = name in {
+                    "transformer.wte.weight",
+                    "transformer.wpe.weight",
+                    "lm_head.weight",
+                }
+                if param.dim() >= 2 and not is_embedding:
+                    muon_params.append(param)
+                elif param.dim() >= 2:
+                    adamw_decay_params.append(param)
+                else:
+                    adamw_nodecay_params.append(param)
+
+            optimizers: List[torch.optim.Optimizer] = []
+            if muon_params:
+                optimizers.append(
+                    Muon(
+                        muon_params,
+                        lr=learning_rate,
+                        weight_decay=weight_decay,
+                        momentum=muon_momentum,
+                        nesterov=muon_nesterov,
+                        ns_steps=muon_ns_steps,
+                    )
+                )
+            adamw_groups = []
+            fallback_lr = (
+                learning_rate
+                if adamw_fallback_learning_rate is None
+                else adamw_fallback_learning_rate
+            )
+            fallback_lr_scale = fallback_lr / learning_rate
+            if adamw_decay_params:
+                adamw_groups.append(
+                    {
+                        "params": adamw_decay_params,
+                        "weight_decay": weight_decay,
+                        "lr": fallback_lr,
+                        "lr_scale": fallback_lr_scale,
+                    }
+                )
+            if adamw_nodecay_params:
+                adamw_groups.append(
+                    {
+                        "params": adamw_nodecay_params,
+                        "weight_decay": 0.0,
+                        "lr": fallback_lr,
+                        "lr_scale": fallback_lr_scale,
+                    }
+                )
+            if adamw_groups:
+                optimizers.append(
+                    torch.optim.AdamW(
+                        adamw_groups, lr=learning_rate, betas=betas, **extra_args
+                    )
+                )
+            return OptimizerChain(*optimizers)
+
+        raise ValueError(f"Unknown optimizer {optimizer_name!r}")
 
 
 def choose_device(requested: str) -> torch.device:
@@ -519,6 +704,11 @@ def train_one_variant(
         args.learning_rate,
         (args.beta1, args.beta2),
         device.type,
+        args.optimizer,
+        args.muon_momentum,
+        args.muon_nesterov,
+        args.muon_ns_steps,
+        args.adamw_fallback_learning_rate,
     )
     if args.compile and hasattr(torch, "compile"):
         model = torch.compile(model)  # type: ignore[assignment]
@@ -539,6 +729,7 @@ def train_one_variant(
 
     print(f"\n=== {variant} ===")
     print(f"parameters: {count_parameters(model):,}")
+    print(f"optimizer: {args.optimizer}")
     with log_path.open("w", encoding="utf-8") as log_file:
         for iter_num in range(args.max_iters + 1):
             if iter_num % args.eval_interval == 0 or iter_num == args.max_iters:
@@ -593,7 +784,7 @@ def train_one_variant(
 
             lr = get_lr(iter_num, args)
             for param_group in optimizer.param_groups:
-                param_group["lr"] = lr
+                param_group["lr"] = lr * param_group.get("lr_scale", 1.0)
 
             x, y = get_batch(
                 train_data, args.batch_size, args.block_size, device, batch_rng
@@ -629,6 +820,11 @@ def train_one_variant(
         "stop_reason": stop_reason,
         "tokens_seen": tokens_seen,
         "elapsed_sec": time.time() - start_time,
+        "optimizer": args.optimizer,
+        "learning_rate": args.learning_rate,
+        "min_lr": args.min_lr,
+        "weight_decay": args.weight_decay,
+        "adamw_fallback_learning_rate": args.adamw_fallback_learning_rate or "",
     }
     if args.save_checkpoints:
         ckpt_path = run_dir / f"{variant}.pt"
@@ -660,6 +856,11 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
         "tokens_seen",
         "elapsed_sec",
         "checkpoint",
+        "optimizer",
+        "learning_rate",
+        "min_lr",
+        "weight_decay",
+        "adamw_fallback_learning_rate",
     ]
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
@@ -743,8 +944,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-iters", type=int, default=100)
     parser.add_argument("--lr-decay-iters", type=int, default=None)
     parser.add_argument("--weight-decay", type=float, default=0.1)
+    parser.add_argument(
+        "--optimizer",
+        choices=("adamw", "muon"),
+        default="adamw",
+        help="Optimizer. Muon is applied to hidden matrix weights; embeddings, "
+        "norms, and biases use AdamW fallback.",
+    )
     parser.add_argument("--beta1", type=float, default=0.9)
     parser.add_argument("--beta2", type=float, default=0.95)
+    parser.add_argument("--muon-momentum", type=float, default=0.95)
+    parser.add_argument("--muon-ns-steps", type=int, default=5)
+    parser.add_argument(
+        "--muon-nesterov",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--adamw-fallback-learning-rate",
+        type=float,
+        default=None,
+        help="When --optimizer=muon, use this AdamW LR for embeddings, norms, "
+        "and biases while Muon uses --learning-rate. The same cosine schedule "
+        "is applied as a ratio.",
+    )
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--compile", action="store_true")
     parser.add_argument("--save-checkpoints", action="store_true")
