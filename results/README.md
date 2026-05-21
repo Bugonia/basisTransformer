@@ -61,3 +61,18 @@ block_af                   25.59M   0.9216
 block_af_no_mid_ln         25.59M   0.9411
 block_af_no_mid_ln_no_wo   23.49M   0.9389
 ```
+
+## enwik8 optimizer sweep, AdamW vs Muon, 8L 512D
+
+- Folder:
+  [`enwik8_optimizer_sweep_standard_pre_layernorm_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k`](enwik8_optimizer_sweep_standard_pre_layernorm_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k/)
+- Main result: on the standard pre-LayerNorm Transformer, Muon substantially
+  improves validation and test loss over the AdamW baseline and reaches its best
+  checkpoint earlier.
+
+```text
+optimizer   best val   test loss   best iter
+AdamW       0.8393     0.8546      96500
+Muon        0.8211     0.8355      68500
+delta      -0.0182    -0.0191
+```
