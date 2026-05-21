@@ -64,6 +64,7 @@ class ModelConfig:
     variant: str = "standard"
     norm: str = "pre"
     norm_kind: str = "layernorm"
+    n_unique_layers: Optional[int] = None
 
 
 class CausalSelfAttention(nn.Module):
@@ -383,12 +384,18 @@ class TinyGPT(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
         self.config = config
+        n_unique_layers = config.n_unique_layers or config.n_layer
+        if n_unique_layers < 1:
+            raise ValueError("n_unique_layers must be at least 1")
+        if n_unique_layers > config.n_layer:
+            raise ValueError("n_unique_layers cannot exceed n_layer")
+        self.n_unique_layers = n_unique_layers
         self.transformer = nn.ModuleDict(
             dict(
                 wte=nn.Embedding(config.vocab_size, config.n_embd),
                 wpe=nn.Embedding(config.block_size, config.n_embd),
                 drop=nn.Dropout(config.dropout),
-                h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+                h=nn.ModuleList([Block(config) for _ in range(n_unique_layers)]),
                 ln_f=make_norm(config.n_embd, config.bias, config.norm_kind)
                 if config.norm in ("pre", "both")
                 else nn.Identity(),
@@ -417,7 +424,8 @@ class TinyGPT(nn.Module):
         pos_emb = self.transformer.wpe(pos)
         x = self.transformer.drop(tok_emb + pos_emb)
         prev_x = None
-        for block in self.transformer.h:
+        for layer_idx in range(self.config.n_layer):
+            block = self.transformer.h[layer_idx % self.n_unique_layers]
             next_x = block(x, prev_x)
             prev_x, x = x, next_x
         x = self.transformer.ln_f(x)
@@ -812,6 +820,8 @@ def train_one_variant(
     result = {
         "variant": variant,
         "parameters": count_parameters(model),
+        "n_layer": model_config.n_layer,
+        "n_unique_layers": model_config.n_unique_layers or model_config.n_layer,
         "final_train_loss": final_losses["train"],
         "final_val_loss": final_losses["val"],
         "best_val_loss": best_val,
@@ -847,6 +857,8 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
     fieldnames = [
         "variant",
         "parameters",
+        "n_layer",
+        "n_unique_layers",
         "final_train_loss",
         "final_val_loss",
         "best_val_loss",
@@ -935,6 +947,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--block-size", type=int, default=128)
     parser.add_argument("--n-layer", type=int, default=6)
+    parser.add_argument(
+        "--n-unique-layers",
+        type=int,
+        default=None,
+        help="Number of unique Transformer blocks. If smaller than --n-layer, "
+        "blocks are reused cyclically, forming a loop/shared-parameter "
+        "Transformer.",
+    )
     parser.add_argument("--n-head", type=int, default=6)
     parser.add_argument("--n-embd", type=int, default=384)
     parser.add_argument("--dropout", type=float, default=0.1)
@@ -978,6 +998,12 @@ def main() -> None:
     args = parse_args()
     if args.lr_decay_iters is None:
         args.lr_decay_iters = args.max_iters
+    if args.n_unique_layers is None:
+        args.n_unique_layers = args.n_layer
+    if args.n_unique_layers < 1:
+        raise SystemExit("--n-unique-layers must be at least 1")
+    if args.n_unique_layers > args.n_layer:
+        raise SystemExit("--n-unique-layers cannot exceed --n-layer")
     if hasattr(torch, "set_float32_matmul_precision"):
         torch.set_float32_matmul_precision("high")
 
@@ -1014,6 +1040,7 @@ def main() -> None:
         bias=args.bias,
         norm=args.norm,
         norm_kind=args.norm_kind,
+        n_unique_layers=args.n_unique_layers,
     )
     if args.variant == "all":
         variants = list(LEGACY_VARIANTS)
