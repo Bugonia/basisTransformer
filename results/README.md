@@ -76,3 +76,39 @@ AdamW       0.8393     0.8546      96500
 Muon        0.8211     0.8355      68500
 delta      -0.0182    -0.0191
 ```
+
+## enwik8 loop Transformer sweep, Muon, 8L 512D
+
+- Folder:
+  [`enwik8_loop_transformer_standard_pre_layernorm_muon_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k`](enwik8_loop_transformer_standard_pre_layernorm_muon_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k/)
+- Main result: depth-wise parameter sharing degrades smoothly. With 4 unique
+  blocks reused twice, the model uses about half the parameters and remains
+  reasonably close to the full 8-block Muon baseline.
+
+```text
+unique blocks   params   test loss   delta vs u8
+1               3.52M    0.9207      +0.0854
+2               6.67M    0.8809      +0.0456
+4               12.98M   0.8520      +0.0167
+8               25.59M   0.8353       0.0000
+```
+
+## enwik8 topology sweep, Muon, 8L 512D
+
+- Folder:
+  [`enwik8_topology_sweep_pre_layernorm_muon_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k`](enwik8_topology_sweep_pre_layernorm_muon_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k/)
+- Main result: standard Attention-then-FFN remains strongest under Muon, but
+  topology gaps shrink substantially compared with the earlier AdamW/30k runs.
+  `block_af_carry` is close to `block_af`, while FA-side block variants remain
+  clearly worse.
+
+```text
+variant          test loss   delta vs standard
+standard         0.8363      0.0000
+standard_fa      0.8509      +0.0146
+parallel         0.8551      +0.0188
+block_af         0.8635      +0.0272
+block_af_carry   0.8611      +0.0248
+block_fa         0.8872      +0.0509
+block_fa_carry   0.8878      +0.0515
+```
