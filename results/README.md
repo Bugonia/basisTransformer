@@ -112,3 +112,21 @@ block_af_carry   0.8611      +0.0248
 block_fa         0.8872      +0.0509
 block_fa_carry   0.8878      +0.0515
 ```
+
+## enwik8 band-aware QK score, Muon, 8L 512D
+
+- Folder:
+  [`enwik8_band_qk_standard_pre_layernorm_muon_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k`](enwik8_band_qk_standard_pre_layernorm_muon_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k/)
+- Main result: learned band-aware QK is essentially tied with the dot-product
+  Muon baseline, while manually fixed below-1 band scales are slightly worse.
+  The learned runs increased band scales above 1, which argues against the
+  fixed low-pass prior in this setup.
+
+```text
+setting          test loss   delta vs dot
+dot baseline     0.8355      0.0000
+learned band-4   0.8362      +0.0007
+learned band-8   0.8357      +0.0002
+fixed band-4     0.8372      +0.0017
+fixed band-8     0.8377      +0.0022
+```
