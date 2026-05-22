@@ -904,6 +904,8 @@ def qk_band_scale_stats(model: nn.Module) -> Dict[str, float]:
     for module in source.modules():
         if not hasattr(module, "get_qk_band_scale"):
             continue
+        if getattr(module, "qk_score", None) != "band":
+            continue
         scale = module.get_qk_band_scale().detach().float().cpu()
         if scale.numel() > 0:
             scales.append(scale.flatten())
