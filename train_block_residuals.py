@@ -39,9 +39,15 @@ WO_ABSORPTION_VARIANTS = (
     "block_af_no_mid_ln",
     "block_af_no_mid_ln_no_wo",
 )
+ATTNRES_VARIANTS = (
+    "standard_attnres_full",
+    "standard_attnres_block",
+)
 VARIANTS = (
     "standard",
     "standard_fa",
+    "standard_attnres_full",
+    "standard_attnres_block",
     "block_af",
     "block_af_no_mid_ln",
     "block_af_no_mid_ln_no_wo",
@@ -69,6 +75,7 @@ class ModelConfig:
     qk_n_bands: int = 4
     qk_band_mode: str = "learned"
     qk_band_scales: Optional[Tuple[float, ...]] = None
+    attnres_n_blocks: int = 8
 
 
 class CausalSelfAttention(nn.Module):
@@ -219,6 +226,33 @@ class RMSNorm(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.weight * x * torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + 1e-5)
+
+
+class DepthAttentionMixer(nn.Module):
+    """Softmax attention over residual sources along model depth."""
+
+    def __init__(self, n_queries: int, ndim: int):
+        super().__init__()
+        self.query = nn.Parameter(torch.zeros(n_queries, ndim))
+        self.norms = nn.ModuleList(RMSNorm(ndim) for _ in range(n_queries))
+
+    def forward(self, query_idx: int, sources: List[torch.Tensor]) -> torch.Tensor:
+        if not sources:
+            raise ValueError("DepthAttentionMixer requires at least one source")
+        query = self.query[query_idx].to(dtype=sources[0].dtype)
+        norm = self.norms[query_idx]
+        logits = torch.stack(
+            [
+                torch.einsum("btd,d->bt", norm(source), query)
+                for source in sources
+            ],
+            dim=0,
+        )
+        weights = F.softmax(logits.float(), dim=0).to(dtype=sources[0].dtype)
+        mixed = torch.zeros_like(sources[0])
+        for weight, source in zip(weights.unbind(dim=0), sources):
+            mixed = mixed + weight.unsqueeze(-1) * source
+        return mixed
 
 
 def make_norm(ndim: int, bias: bool, norm_kind: str) -> nn.Module:
@@ -467,6 +501,11 @@ class TinyGPT(nn.Module):
                 else nn.Identity(),
             )
         )
+        self.attnres = (
+            DepthAttentionMixer(2 * config.n_layer + 1, config.n_embd)
+            if config.variant in ATTNRES_VARIANTS
+            else None
+        )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight
         self.apply(self._init_weights)
@@ -489,11 +528,16 @@ class TinyGPT(nn.Module):
         tok_emb = self.transformer.wte(idx)
         pos_emb = self.transformer.wpe(pos)
         x = self.transformer.drop(tok_emb + pos_emb)
-        prev_x = None
-        for layer_idx in range(self.config.n_layer):
-            block = self.transformer.h[layer_idx % self.n_unique_layers]
-            next_x = block(x, prev_x)
-            prev_x, x = x, next_x
+        if self.config.variant == "standard_attnres_full":
+            x = self.forward_attnres_full(x)
+        elif self.config.variant == "standard_attnres_block":
+            x = self.forward_attnres_block(x)
+        else:
+            prev_x = None
+            for layer_idx in range(self.config.n_layer):
+                block = self.transformer.h[layer_idx % self.n_unique_layers]
+                next_x = block(x, prev_x)
+                prev_x, x = x, next_x
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x)
         loss = None
@@ -503,6 +547,70 @@ class TinyGPT(nn.Module):
                 targets.view(-1),
             )
         return logits, loss
+
+    def forward_attnres_full(self, x: torch.Tensor) -> torch.Tensor:
+        assert self.attnres is not None
+        sources = [x]
+        step_idx = 0
+        for layer_idx in range(self.config.n_layer):
+            block = self.transformer.h[layer_idx % self.n_unique_layers]
+
+            h = self.attnres(step_idx, sources)
+            sources.append(block.attn(block.n1(h)))
+            step_idx += 1
+
+            h = self.attnres(step_idx, sources)
+            sources.append(block.ffn(block.n2(h)))
+            step_idx += 1
+
+        return self.attnres(step_idx, sources)
+
+    def forward_attnres_block(self, x: torch.Tensor) -> torch.Tensor:
+        assert self.attnres is not None
+        total_steps = 2 * self.config.n_layer
+        target_blocks = max(1, min(self.config.attnres_n_blocks, total_steps))
+        steps_per_block = math.ceil(total_steps / target_blocks)
+
+        completed_blocks = [x]
+        partial_block: Optional[torch.Tensor] = None
+        step_idx = 0
+
+        for layer_idx in range(self.config.n_layer):
+            block = self.transformer.h[layer_idx % self.n_unique_layers]
+
+            sources = (
+                completed_blocks
+                if partial_block is None
+                else completed_blocks + [partial_block]
+            )
+            h = self.attnres(step_idx, sources)
+            attn_out = block.attn(block.n1(h))
+            partial_block = (
+                attn_out if partial_block is None else partial_block + attn_out
+            )
+            step_idx += 1
+            if step_idx % steps_per_block == 0:
+                completed_blocks.append(partial_block)
+                partial_block = None
+
+            sources = (
+                completed_blocks
+                if partial_block is None
+                else completed_blocks + [partial_block]
+            )
+            h = self.attnres(step_idx, sources)
+            ffn_out = block.ffn(block.n2(h))
+            partial_block = (
+                ffn_out if partial_block is None else partial_block + ffn_out
+            )
+            step_idx += 1
+            if step_idx % steps_per_block == 0:
+                completed_blocks.append(partial_block)
+                partial_block = None
+
+        if partial_block is not None:
+            completed_blocks.append(partial_block)
+        return self.attnres(step_idx, completed_blocks)
 
     def configure_optimizers(
         self,
@@ -520,10 +628,19 @@ class TinyGPT(nn.Module):
         fused_available = "fused" in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and device_type == "cuda"
         extra_args = {"fused": True} if use_fused else {}
+        no_decay_names = {"attnres.query"}
 
         if optimizer_name == "adamw":
-            decay_params = [p for _, p in param_dict.items() if p.dim() >= 2]
-            nodecay_params = [p for _, p in param_dict.items() if p.dim() < 2]
+            decay_params = [
+                p
+                for name, p in param_dict.items()
+                if p.dim() >= 2 and name not in no_decay_names
+            ]
+            nodecay_params = [
+                p
+                for name, p in param_dict.items()
+                if p.dim() < 2 or name in no_decay_names
+            ]
             optim_groups = [
                 {"params": decay_params, "weight_decay": weight_decay},
                 {"params": nodecay_params, "weight_decay": 0.0},
@@ -542,9 +659,9 @@ class TinyGPT(nn.Module):
                     "transformer.wpe.weight",
                     "lm_head.weight",
                 }
-                if param.dim() >= 2 and not is_embedding:
+                if param.dim() >= 2 and not is_embedding and name not in no_decay_names:
                     muon_params.append(param)
-                elif param.dim() >= 2:
+                elif param.dim() >= 2 and name not in no_decay_names:
                     adamw_decay_params.append(param)
                 else:
                     adamw_nodecay_params.append(param)
@@ -856,6 +973,17 @@ def train_one_variant(
                 f"{format_qk_band_scales(model_config.qk_band_scales)}"
             )
     print(qk_message)
+    if variant in ATTNRES_VARIANTS:
+        total_steps = 2 * model_config.n_layer
+        target_blocks = max(1, min(model_config.attnres_n_blocks, total_steps))
+        steps_per_block = math.ceil(total_steps / target_blocks)
+        if variant == "standard_attnres_full":
+            print(f"attnres: full | depth_steps: {total_steps}")
+        else:
+            print(
+                f"attnres: block | depth_steps: {total_steps} | "
+                f"target_blocks: {target_blocks} | steps_per_block: {steps_per_block}"
+            )
     with log_path.open("w", encoding="utf-8") as log_file:
         for iter_num in range(args.max_iters + 1):
             if iter_num % args.eval_interval == 0 or iter_num == args.max_iters:
@@ -951,6 +1079,11 @@ def train_one_variant(
             if model_config.qk_score == "band"
             else ""
         ),
+        "attnres_n_blocks": (
+            model_config.attnres_n_blocks
+            if variant == "standard_attnres_block"
+            else ""
+        ),
         "final_train_loss": final_losses["train"],
         "final_val_loss": final_losses["val"],
         "best_val_loss": best_val,
@@ -993,6 +1126,7 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
         "qk_n_bands",
         "qk_band_mode",
         "qk_band_scales",
+        "attnres_n_blocks",
         "final_train_loss",
         "final_val_loss",
         "best_val_loss",
@@ -1122,6 +1256,14 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated positive per-band scales for --qk-band-mode=fixed, "
         "for example '0.8,0.6,0.4,0.2'.",
     )
+    parser.add_argument(
+        "--attnres-n-blocks",
+        type=int,
+        default=8,
+        help="Target number of depth blocks for standard_attnres_block. "
+        "With 8 Transformer blocks this defaults to one AttnRes block per "
+        "attention+FFN pair.",
+    )
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--bias", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
@@ -1169,6 +1311,8 @@ def main() -> None:
         raise SystemExit("--n-unique-layers must be at least 1")
     if args.n_unique_layers > args.n_layer:
         raise SystemExit("--n-unique-layers cannot exceed --n-layer")
+    if args.attnres_n_blocks < 1:
+        raise SystemExit("--attnres-n-blocks must be at least 1")
     if args.n_embd % args.n_head != 0:
         raise SystemExit("--n-embd must be divisible by --n-head")
     head_dim = args.n_embd // args.n_head
@@ -1233,6 +1377,7 @@ def main() -> None:
         qk_n_bands=args.qk_n_bands,
         qk_band_mode=args.qk_band_mode,
         qk_band_scales=qk_band_scales,
+        attnres_n_blocks=args.attnres_n_blocks,
     )
     if args.variant == "all":
         variants = list(LEGACY_VARIANTS)

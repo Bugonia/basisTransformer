@@ -18,6 +18,8 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 VARIANT_ORDER = [
     "standard",
     "standard_fa",
+    "standard_attnres_block",
+    "standard_attnres_full",
     "block_af",
     "block_af_no_mid_ln",
     "block_af_no_mid_ln_no_wo",
@@ -29,6 +31,8 @@ VARIANT_ORDER = [
 COLORS = {
     "standard": "#2F6FED",
     "standard_fa": "#0891B2",
+    "standard_attnres_block": "#16A34A",
+    "standard_attnres_full": "#9333EA",
     "block_af": "#0E9F6E",
     "block_af_no_mid_ln": "#2563EB",
     "block_af_no_mid_ln_no_wo": "#DC2626",
@@ -40,6 +44,8 @@ COLORS = {
 LABELS = {
     "standard": "Standard AF",
     "standard_fa": "Standard FA",
+    "standard_attnres_block": "Standard Block AttnRes",
+    "standard_attnres_full": "Standard Full AttnRes",
     "block_af": "Block AF",
     "block_af_no_mid_ln": "Block AF No Mid LN",
     "block_af_no_mid_ln_no_wo": "Block AF No W_O",

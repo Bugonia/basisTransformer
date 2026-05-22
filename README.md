@@ -44,6 +44,22 @@ u = h + FFN(h)
 h_next = u + Attn(u)
 ```
 
+`standard_attnres_full`
+
+```text
+y_0 = embedding
+h_t = AttnRes_t(y_0, ..., y_{t-1})
+y_t = Sublayer_t(Norm(h_t))
+```
+
+`standard_attnres_block`
+
+```text
+blocks = [embedding]
+h_t = AttnRes_t(completed_blocks, current_block_sum)
+current_block_sum += Sublayer_t(Norm(h_t))
+```
+
 `block_af_carry`
 
 ```text
