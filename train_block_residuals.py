@@ -65,6 +65,8 @@ class ModelConfig:
     norm: str = "pre"
     norm_kind: str = "layernorm"
     n_unique_layers: Optional[int] = None
+    qk_score: str = "dot"
+    qk_n_bands: int = 4
 
 
 class CausalSelfAttention(nn.Module):
@@ -72,14 +74,29 @@ class CausalSelfAttention(nn.Module):
         super().__init__()
         if config.n_embd % config.n_head != 0:
             raise ValueError("n_embd must be divisible by n_head")
+        if config.qk_score not in ("dot", "band"):
+            raise ValueError("qk_score must be 'dot' or 'band'")
         self.n_head = config.n_head
         self.dropout_p = config.dropout
+        self.qk_score = config.qk_score
+        self.head_dim = config.n_embd // config.n_head
+        self.qk_n_bands = config.qk_n_bands
         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
         self.c_proj = (
             nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
             if use_output_projection
             else nn.Identity()
         )
+        if self.qk_score == "band":
+            if self.qk_n_bands < 1:
+                raise ValueError("qk_n_bands must be at least 1")
+            if self.qk_n_bands > self.head_dim:
+                raise ValueError("qk_n_bands cannot exceed head_dim")
+            band_ids = self._make_band_ids(self.head_dim, self.qk_n_bands)
+            self.register_buffer("qk_band_ids", band_ids, persistent=False)
+            self.qk_band_log_scale = nn.Parameter(
+                torch.zeros(self.n_head * self.qk_n_bands)
+            )
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
         self.flash = hasattr(F, "scaled_dot_product_attention")
@@ -90,13 +107,38 @@ class CausalSelfAttention(nn.Module):
                 persistent=False,
             )
 
+    @staticmethod
+    def _make_band_ids(head_dim: int, n_bands: int) -> torch.Tensor:
+        base = head_dim // n_bands
+        remainder = head_dim % n_bands
+        ids: List[int] = []
+        for band in range(n_bands):
+            width = base + (1 if band < remainder else 0)
+            ids.extend([band] * width)
+        return torch.tensor(ids, dtype=torch.long)
+
+    def apply_qk_metric(
+        self, q: torch.Tensor, k: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if self.qk_score != "band":
+            return q, k
+        band_scale = self.qk_band_log_scale.float().clamp(-3.0, 3.0).exp()
+        band_scale = band_scale.view(self.n_head, self.qk_n_bands)
+        coord_scale = band_scale.gather(
+            1,
+            self.qk_band_ids.view(1, self.head_dim).expand(self.n_head, -1),
+        )
+        coord_scale = coord_scale.sqrt().to(dtype=q.dtype, device=q.device)
+        coord_scale = coord_scale.view(1, self.n_head, 1, self.head_dim)
+        return q * coord_scale, k * coord_scale
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch, seq_len, channels = x.size()
         q, k, v = self.c_attn(x).split(channels, dim=2)
-        head_dim = channels // self.n_head
-        q = q.view(batch, seq_len, self.n_head, head_dim).transpose(1, 2)
-        k = k.view(batch, seq_len, self.n_head, head_dim).transpose(1, 2)
-        v = v.view(batch, seq_len, self.n_head, head_dim).transpose(1, 2)
+        q = q.view(batch, seq_len, self.n_head, self.head_dim).transpose(1, 2)
+        k = k.view(batch, seq_len, self.n_head, self.head_dim).transpose(1, 2)
+        v = v.view(batch, seq_len, self.n_head, self.head_dim).transpose(1, 2)
+        q, k = self.apply_qk_metric(q, k)
 
         if self.flash:
             y = F.scaled_dot_product_attention(
@@ -694,6 +736,25 @@ def clone_state_dict_to_cpu(model: nn.Module) -> Dict[str, torch.Tensor]:
     return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
 
+@torch.no_grad()
+def qk_band_scale_stats(model: nn.Module) -> Dict[str, float]:
+    source = getattr(model, "_orig_mod", model)
+    scales = []
+    for module in source.modules():
+        param = getattr(module, "qk_band_log_scale", None)
+        if param is not None:
+            scale = param.detach().float().clamp(-3.0, 3.0).exp().cpu()
+            scales.append(scale.flatten())
+    if not scales:
+        return {}
+    values = torch.cat(scales)
+    return {
+        "qk_band_scale_mean": values.mean().item(),
+        "qk_band_scale_min": values.min().item(),
+        "qk_band_scale_max": values.max().item(),
+    }
+
+
 def train_one_variant(
     variant: str,
     model_config: ModelConfig,
@@ -738,6 +799,7 @@ def train_one_variant(
     print(f"\n=== {variant} ===")
     print(f"parameters: {count_parameters(model):,}")
     print(f"optimizer: {args.optimizer}")
+    print(f"qk_score: {model_config.qk_score} | qk_n_bands: {model_config.qk_n_bands}")
     with log_path.open("w", encoding="utf-8") as log_file:
         for iter_num in range(args.max_iters + 1):
             if iter_num % args.eval_interval == 0 or iter_num == args.max_iters:
@@ -767,6 +829,7 @@ def train_one_variant(
                     "tokens_per_sec": tokens_seen / elapsed,
                     "elapsed_sec": elapsed,
                 }
+                row.update(qk_band_scale_stats(model))
                 log_file.write(json.dumps(row) + "\n")
                 log_file.flush()
                 print(
@@ -822,6 +885,8 @@ def train_one_variant(
         "parameters": count_parameters(model),
         "n_layer": model_config.n_layer,
         "n_unique_layers": model_config.n_unique_layers or model_config.n_layer,
+        "qk_score": model_config.qk_score,
+        "qk_n_bands": model_config.qk_n_bands,
         "final_train_loss": final_losses["train"],
         "final_val_loss": final_losses["val"],
         "best_val_loss": best_val,
@@ -836,6 +901,7 @@ def train_one_variant(
         "weight_decay": args.weight_decay,
         "adamw_fallback_learning_rate": args.adamw_fallback_learning_rate or "",
     }
+    result.update(qk_band_scale_stats(model))
     if args.save_checkpoints:
         ckpt_path = run_dir / f"{variant}.pt"
         torch.save({"model": model.state_dict(), "config": asdict(model_config)}, ckpt_path)
@@ -859,6 +925,8 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
         "parameters",
         "n_layer",
         "n_unique_layers",
+        "qk_score",
+        "qk_n_bands",
         "final_train_loss",
         "final_val_loss",
         "best_val_loss",
@@ -873,6 +941,9 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
         "min_lr",
         "weight_decay",
         "adamw_fallback_learning_rate",
+        "qk_band_scale_mean",
+        "qk_band_scale_min",
+        "qk_band_scale_max",
     ]
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
@@ -957,6 +1028,20 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--n-head", type=int, default=6)
     parser.add_argument("--n-embd", type=int, default=384)
+    parser.add_argument(
+        "--qk-score",
+        choices=("dot", "band"),
+        default="dot",
+        help="Attention score metric. 'band' learns a per-head, per-band "
+        "positive diagonal metric for QK before scaled dot-product attention.",
+    )
+    parser.add_argument(
+        "--qk-n-bands",
+        type=int,
+        default=4,
+        help="Number of equal-width coefficient bands per attention head when "
+        "--qk-score=band.",
+    )
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--bias", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
@@ -1004,6 +1089,14 @@ def main() -> None:
         raise SystemExit("--n-unique-layers must be at least 1")
     if args.n_unique_layers > args.n_layer:
         raise SystemExit("--n-unique-layers cannot exceed --n-layer")
+    if args.n_embd % args.n_head != 0:
+        raise SystemExit("--n-embd must be divisible by --n-head")
+    head_dim = args.n_embd // args.n_head
+    if args.qk_score == "band":
+        if args.qk_n_bands < 1:
+            raise SystemExit("--qk-n-bands must be at least 1")
+        if args.qk_n_bands > head_dim:
+            raise SystemExit("--qk-n-bands cannot exceed head_dim")
     if hasattr(torch, "set_float32_matmul_precision"):
         torch.set_float32_matmul_precision("high")
 
@@ -1041,6 +1134,8 @@ def main() -> None:
         norm=args.norm,
         norm_kind=args.norm_kind,
         n_unique_layers=args.n_unique_layers,
+        qk_score=args.qk_score,
+        qk_n_bands=args.qk_n_bands,
     )
     if args.variant == "all":
         variants = list(LEGACY_VARIANTS)

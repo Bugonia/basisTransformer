@@ -1,0 +1,114 @@
+# Band-Aware QK Score Sweep
+
+This experiment compares standard scaled dot-product attention with a
+band-aware QK metric while keeping the rest of the standard Transformer setup
+fixed:
+
+```text
+dot   score = q^T k / sqrt(head_dim)
+band  score = q^T G_band k / sqrt(head_dim)
+```
+
+`G_band` is a positive diagonal metric that is constant inside each head-local
+coefficient band. It is initialized to the identity, so the band run starts
+exactly as standard attention and can learn to upweight or downweight routing
+signals from different coefficient bands.
+
+## Default Setup
+
+```text
+variant = standard
+norm = pre
+norm_kind = layernorm
+optimizer = muon
+n_layer = 8
+n_unique_layers = 8
+n_head = 8
+n_embd = 512
+head_dim = 64
+qk_score = dot, band
+qk_n_bands = 4
+block_size = 512
+batch_size = 256
+max_iters = 100000
+lr_decay_iters = 30000
+early_stop_patience = 10
+learning_rate = 2e-3
+min_lr = 2e-4
+weight_decay = 0.01
+adamw_fallback_learning_rate = 2e-4
+seeds = 1, 2
+```
+
+The default run launches 4 jobs: `dot/band x seed1/seed2`.
+
+## Run
+
+```bash
+bash experiments/band_qk/run_band_qk.sh
+```
+
+Useful overrides:
+
+```bash
+GPUS="0 1 2 3" bash experiments/band_qk/run_band_qk.sh
+
+QK_N_BANDS=8 bash experiments/band_qk/run_band_qk.sh
+
+OPTIMIZER=adamw MAX_ITERS=30000 LR_DECAY_ITERS=30000 EARLY_STOP_PATIENCE=0 \
+  bash experiments/band_qk/run_band_qk.sh
+```
+
+The script writes per-run summaries under `runs/block_residuals/` and an
+aggregate CSV under `reports/`.
+
+## Monitor
+
+```bash
+BASE_RUN=enwik8_band_qk_standard_pre_layernorm_muon_8l_512d_ctx512_bs256_bands4_test005_100k_earlystop10_lrdecay30k
+
+python monitor_runs.py \
+  --base-run "$BASE_RUN" \
+  --watch 10 \
+  --html "reports/${BASE_RUN}_live.html"
+```
+
+## Summarize
+
+```bash
+BASE_RUN=enwik8_band_qk_standard_pre_layernorm_muon_8l_512d_ctx512_bs256_bands4_test005_100k_earlystop10_lrdecay30k
+
+python experiments/band_qk/summarize_band_qk.py \
+  "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
+  --baseline-qk-score dot \
+  --csv-output "reports/${BASE_RUN}_aggregate.csv"
+```
+
+The summary also records the learned band metric statistics:
+
+```text
+qk_band_scale_mean
+qk_band_scale_min
+qk_band_scale_max
+```
+
+## Manual Command
+
+```bash
+.venv_cu128/bin/python train_block_residuals.py \
+  --data-file data/enwik8.txt \
+  --encoding latin-1 \
+  --variant standard \
+  --qk-score band \
+  --qk-n-bands 4 \
+  --n-layer 8 \
+  --n-head 8 \
+  --n-embd 512 \
+  --block-size 512 \
+  --batch-size 256 \
+  --optimizer muon \
+  --learning-rate 2e-3 \
+  --min-lr 2e-4 \
+  --adamw-fallback-learning-rate 2e-4 \
+  --dtype bfloat16
+```
