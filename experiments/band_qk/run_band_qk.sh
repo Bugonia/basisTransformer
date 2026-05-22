@@ -21,7 +21,7 @@ BATCH_SIZE="${BATCH_SIZE:-256}"
 BLOCK_SIZE="${BLOCK_SIZE:-512}"
 BASE_RUN="${BASE_RUN:-enwik8_band_qk_${VARIANT}_${NORM}_${NORM_KIND}_${OPTIMIZER}_${N_LAYER}l_${N_EMBD}d_ctx${BLOCK_SIZE}_bs${BATCH_SIZE}_bands${QK_N_BANDS}_test005_100k_earlystop10_lrdecay30k}"
 
-QK_SCORES_STRING="${QK_SCORES:-dot band}"
+QK_SCORES_STRING="${QK_SCORES:-band}"
 SEEDS_STRING="${SEEDS:-1 2}"
 read -r -a QK_SCORE_ARRAY <<< "$QK_SCORES_STRING"
 read -r -a SEED_ARRAY <<< "$SEEDS_STRING"
@@ -190,5 +190,4 @@ wait_wave
 
 "$PYTHON_BIN" experiments/band_qk/summarize_band_qk.py \
   "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
-  --baseline-qk-score dot \
   --csv-output "reports/${BASE_RUN}_aggregate.csv"

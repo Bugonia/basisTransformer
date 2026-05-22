@@ -184,7 +184,6 @@ def pair_key(row: Dict[str, str]) -> Tuple[str, ...]:
     return (
         row.get("seed", ""),
         row.get("variant", ""),
-        row.get("qk_n_bands", ""),
         row.get("optimizer", ""),
         row.get("norm", ""),
         row.get("norm_kind", ""),
@@ -200,10 +199,17 @@ def pair_key(row: Dict[str, str]) -> Tuple[str, ...]:
     )
 
 
+def qk_label(row: Dict[str, str]) -> str:
+    qk_score = row.get("qk_score", "")
+    if qk_score == "band":
+        return f"band_bands{row.get('qk_n_bands', '')}"
+    return qk_score
+
+
 def paired_deltas(rows: List[Dict[str, str]], baseline_qk_score: str) -> List[Dict[str, str]]:
     by_pair: Dict[Tuple[str, ...], Dict[str, Dict[str, str]]] = defaultdict(dict)
     for row in rows:
-        by_pair[pair_key(row)][row["qk_score"]] = row
+        by_pair[pair_key(row)][qk_label(row)] = row
 
     deltas: Dict[str, Dict[str, List[float]]] = defaultdict(
         lambda: {"best_val_loss": [], "test_loss": []}
@@ -214,21 +220,21 @@ def paired_deltas(rows: List[Dict[str, str]], baseline_qk_score: str) -> List[Di
             continue
         base_val = safe_float(baseline.get("best_val_loss"))
         base_test = safe_float(baseline.get("test_loss"))
-        for qk_score, row in qk_scores.items():
-            if qk_score == baseline_qk_score:
+        for label, row in qk_scores.items():
+            if label == baseline_qk_score:
                 continue
-            deltas[qk_score]["best_val_loss"].append(
+            deltas[label]["best_val_loss"].append(
                 safe_float(row.get("best_val_loss")) - base_val
             )
-            deltas[qk_score]["test_loss"].append(
+            deltas[label]["test_loss"].append(
                 safe_float(row.get("test_loss")) - base_test
             )
 
     out = []
-    for qk_score, values in sorted(deltas.items()):
+    for label, values in sorted(deltas.items()):
         out.append(
             {
-                "qk_score": qk_score,
+                "qk_score": label,
                 "best_val_loss_delta": summarize(values["best_val_loss"]),
                 "test_loss_delta": summarize(values["test_loss"]),
                 "n": str(len(values["best_val_loss"])),

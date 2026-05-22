@@ -1,8 +1,7 @@
-# Band-Aware QK Score Sweep
+# Band-Aware QK Score Experiment
 
-This experiment compares standard scaled dot-product attention with a
-band-aware QK metric while keeping the rest of the standard Transformer setup
-fixed:
+This experiment tests a band-aware QK metric while keeping the rest of the
+standard Transformer setup fixed:
 
 ```text
 dot   score = q^T k / sqrt(head_dim)
@@ -26,7 +25,7 @@ n_unique_layers = 8
 n_head = 8
 n_embd = 512
 head_dim = 64
-qk_score = dot, band
+qk_score = band
 qk_n_bands = 4
 block_size = 512
 batch_size = 256
@@ -40,7 +39,15 @@ adamw_fallback_learning_rate = 2e-4
 seeds = 1, 2
 ```
 
-The default run launches 4 jobs: `dot/band x seed1/seed2`.
+The default run launches 2 jobs: `band x seed1/seed2`. The dot-product baseline
+is reused from the prior optimizer sweep:
+
+```text
+results/enwik8_optimizer_sweep_standard_pre_layernorm_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k/
+```
+
+That baseline has the same model structure, optimizer, schedule, data split,
+and seeds, with the default `qk_score=dot`.
 
 ## Run
 
@@ -80,8 +87,19 @@ BASE_RUN=enwik8_band_qk_standard_pre_layernorm_muon_8l_512d_ctx512_bs256_bands4_
 
 python experiments/band_qk/summarize_band_qk.py \
   "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
-  --baseline-qk-score dot \
   --csv-output "reports/${BASE_RUN}_aggregate.csv"
+```
+
+To recompute a paired delta against the previous dot baseline, combine the band
+summary files with the optimizer-sweep dot baseline summaries:
+
+```bash
+DOT_BASE=enwik8_optimizer_sweep_standard_pre_layernorm_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k
+
+python experiments/band_qk/summarize_band_qk.py \
+  "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
+  "runs/block_residuals/${DOT_BASE}_seed*_muon_lr2e3/summary.csv" \
+  --baseline-qk-score dot
 ```
 
 The summary also records the learned band metric statistics:
