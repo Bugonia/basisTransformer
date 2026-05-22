@@ -17,6 +17,8 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 SUMMARY_COLUMNS = [
     "qk_score",
     "qk_n_bands",
+    "qk_band_mode",
+    "qk_band_scales",
     "variant",
     "optimizer",
     "norm",
@@ -81,6 +83,16 @@ def summarize_int(values: Iterable[float]) -> str:
     return f"{mean(xs):.0f} +/- {spread:.0f}"
 
 
+def normalize_scales(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return ",".join(f"{float(part.strip()):g}" for part in text.split(","))
+    except ValueError:
+        return text.replace(" ", "")
+
+
 def load_json(path: Path) -> Dict[str, object]:
     if not path.exists():
         return {}
@@ -110,9 +122,22 @@ def load_rows(patterns: Sequence[str]) -> List[Dict[str, str]]:
                     row["qk_score"] = str(
                         row.get("qk_score") or config.get("qk_score", "dot")
                     )
-                    row["qk_n_bands"] = str(
-                        row.get("qk_n_bands") or config.get("qk_n_bands", "")
-                    )
+                    if row["qk_score"] == "band":
+                        row["qk_n_bands"] = str(
+                            row.get("qk_n_bands") or config.get("qk_n_bands", "")
+                        )
+                        row["qk_band_mode"] = str(
+                            row.get("qk_band_mode")
+                            or config.get("qk_band_mode", "learned")
+                        )
+                        row["qk_band_scales"] = normalize_scales(
+                            row.get("qk_band_scales")
+                            or config.get("qk_band_scales", "")
+                        )
+                    else:
+                        row["qk_n_bands"] = ""
+                        row["qk_band_mode"] = ""
+                        row["qk_band_scales"] = ""
                     row["optimizer"] = str(
                         row.get("optimizer") or config.get("optimizer", "adamw")
                     )
@@ -134,12 +159,14 @@ def load_rows(patterns: Sequence[str]) -> List[Dict[str, str]]:
 
 
 def aggregate(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    grouped: Dict[Tuple[str, str, str, str, str, str], List[Dict[str, str]]] = defaultdict(list)
+    grouped: Dict[Tuple[str, ...], List[Dict[str, str]]] = defaultdict(list)
     for row in rows:
         grouped[
             (
                 row["qk_score"],
                 row["qk_n_bands"],
+                row["qk_band_mode"],
+                row["qk_band_scales"],
                 row["variant"],
                 row["optimizer"],
                 row["norm"],
@@ -148,22 +175,41 @@ def aggregate(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
         ].append(row)
 
     out: List[Dict[str, str]] = []
-    for (qk_score, qk_n_bands, variant, optimizer, norm, norm_kind), group in sorted(
+    for (
+        qk_score,
+        qk_n_bands,
+        qk_band_mode,
+        qk_band_scales,
+        variant,
+        optimizer,
+        norm,
+        norm_kind,
+    ), group in sorted(
         grouped.items()
     ):
         out.append(
             {
                 "qk_score": qk_score,
                 "qk_n_bands": qk_n_bands,
+                "qk_band_mode": qk_band_mode,
+                "qk_band_scales": qk_band_scales,
                 "variant": variant,
                 "optimizer": optimizer,
                 "norm": norm,
                 "norm_kind": norm_kind,
-                "parameters": summarize_int(safe_float(r.get("parameters")) for r in group),
-                "best_val_loss": summarize(safe_float(r.get("best_val_loss")) for r in group),
+                "parameters": summarize_int(
+                    safe_float(r.get("parameters")) for r in group
+                ),
+                "best_val_loss": summarize(
+                    safe_float(r.get("best_val_loss")) for r in group
+                ),
                 "test_loss": summarize(safe_float(r.get("test_loss")) for r in group),
-                "final_val_loss": summarize(safe_float(r.get("final_val_loss")) for r in group),
-                "best_iter": summarize_int(safe_float(r.get("best_iter")) for r in group),
+                "final_val_loss": summarize(
+                    safe_float(r.get("final_val_loss")) for r in group
+                ),
+                "best_iter": summarize_int(
+                    safe_float(r.get("best_iter")) for r in group
+                ),
                 "elapsed_sec": summarize(safe_float(r.get("elapsed_sec")) for r in group),
                 "qk_band_scale_mean": summarize(
                     safe_float(r.get("qk_band_scale_mean")) for r in group
@@ -202,7 +248,13 @@ def pair_key(row: Dict[str, str]) -> Tuple[str, ...]:
 def qk_label(row: Dict[str, str]) -> str:
     qk_score = row.get("qk_score", "")
     if qk_score == "band":
-        return f"band_bands{row.get('qk_n_bands', '')}"
+        mode = row.get("qk_band_mode", "learned") or "learned"
+        label = f"band_{mode}_bands{row.get('qk_n_bands', '')}"
+        scales = row.get("qk_band_scales", "")
+        if mode == "fixed" and scales:
+            scale_slug = scales.replace(",", "-").replace(".", "p")
+            label += f"_s{scale_slug}"
+        return label
     return qk_score
 
 

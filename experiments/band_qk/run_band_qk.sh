@@ -17,9 +17,38 @@ N_UNIQUE_LAYERS="${N_UNIQUE_LAYERS:-$N_LAYER}"
 N_HEAD="${N_HEAD:-8}"
 N_EMBD="${N_EMBD:-512}"
 QK_N_BANDS="${QK_N_BANDS:-4}"
+QK_BAND_MODE="${QK_BAND_MODE:-fixed}"
+if [[ "$QK_BAND_MODE" != "learned" && "$QK_BAND_MODE" != "fixed" ]]; then
+  echo "Unknown QK_BAND_MODE='${QK_BAND_MODE}'. Expected learned or fixed." >&2
+  exit 1
+fi
+
+if [[ "$QK_BAND_MODE" == "fixed" && -z "${QK_BAND_SCALES:-}" ]]; then
+  case "$QK_N_BANDS" in
+    4)
+      QK_BAND_SCALES="0.8,0.6,0.4,0.2"
+      ;;
+    8)
+      QK_BAND_SCALES="0.9,0.8,0.7,0.6,0.5,0.4,0.3,0.2"
+      ;;
+    *)
+      echo "Set QK_BAND_SCALES for QK_N_BANDS=${QK_N_BANDS}." >&2
+      exit 1
+      ;;
+  esac
+fi
+
+if [[ "$QK_BAND_MODE" == "fixed" ]]; then
+  QK_SCALE_SLUG="${QK_BAND_SCALES//,/-}"
+  QK_SCALE_SLUG="${QK_SCALE_SLUG//./p}"
+  QK_SCALE_SLUG="${QK_SCALE_SLUG// /}"
+  QK_TAG="fixed_bands${QK_N_BANDS}_s${QK_SCALE_SLUG}"
+else
+  QK_TAG="learned_bands${QK_N_BANDS}"
+fi
 BATCH_SIZE="${BATCH_SIZE:-256}"
 BLOCK_SIZE="${BLOCK_SIZE:-512}"
-BASE_RUN="${BASE_RUN:-enwik8_band_qk_${VARIANT}_${NORM}_${NORM_KIND}_${OPTIMIZER}_${N_LAYER}l_${N_EMBD}d_ctx${BLOCK_SIZE}_bs${BATCH_SIZE}_bands${QK_N_BANDS}_test005_100k_earlystop10_lrdecay30k}"
+BASE_RUN="${BASE_RUN:-enwik8_band_qk_${VARIANT}_${NORM}_${NORM_KIND}_${OPTIMIZER}_${N_LAYER}l_${N_EMBD}d_ctx${BLOCK_SIZE}_bs${BATCH_SIZE}_${QK_TAG}_test005_100k_earlystop10_lrdecay30k}"
 
 QK_SCORES_STRING="${QK_SCORES:-band}"
 SEEDS_STRING="${SEEDS:-1 2}"
@@ -128,6 +157,13 @@ for seed in "${SEED_ARRAY[@]}"; do
     run_name="${BASE_RUN}_seed${seed}_${qk_score}"
     run_dir="runs/block_residuals/${run_name}"
     log_path="runs/${run_name}.log"
+    qk_args=(--qk-score "$qk_score" --qk-n-bands "$QK_N_BANDS")
+    if [[ "$qk_score" == "band" ]]; then
+      qk_args+=(--qk-band-mode "$QK_BAND_MODE")
+      if [[ "$QK_BAND_MODE" == "fixed" ]]; then
+        qk_args+=(--qk-band-scales "$QK_BAND_SCALES")
+      fi
+    fi
 
     if [[ "$RESUME" == "1" || "$RESUME" == "true" ]]; then
       if [[ -s "${run_dir}/summary.csv" ]]; then
@@ -144,8 +180,7 @@ for seed in "${SEED_ARRAY[@]}"; do
       --norm "$NORM" \
       --norm-kind "$NORM_KIND" \
       --optimizer "$OPTIMIZER" \
-      --qk-score "$qk_score" \
-      --qk-n-bands "$QK_N_BANDS" \
+      "${qk_args[@]}" \
       --run-name "$run_name" \
       --seed "$seed" \
       --max-iters "$MAX_ITERS" \

@@ -67,6 +67,8 @@ class ModelConfig:
     n_unique_layers: Optional[int] = None
     qk_score: str = "dot"
     qk_n_bands: int = 4
+    qk_band_mode: str = "learned"
+    qk_band_scales: Optional[Tuple[float, ...]] = None
 
 
 class CausalSelfAttention(nn.Module):
@@ -81,6 +83,7 @@ class CausalSelfAttention(nn.Module):
         self.qk_score = config.qk_score
         self.head_dim = config.n_embd // config.n_head
         self.qk_n_bands = config.qk_n_bands
+        self.qk_band_mode = config.qk_band_mode
         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
         self.c_proj = (
             nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
@@ -88,15 +91,30 @@ class CausalSelfAttention(nn.Module):
             else nn.Identity()
         )
         if self.qk_score == "band":
+            if self.qk_band_mode not in ("learned", "fixed"):
+                raise ValueError("qk_band_mode must be 'learned' or 'fixed'")
             if self.qk_n_bands < 1:
                 raise ValueError("qk_n_bands must be at least 1")
             if self.qk_n_bands > self.head_dim:
                 raise ValueError("qk_n_bands cannot exceed head_dim")
             band_ids = self._make_band_ids(self.head_dim, self.qk_n_bands)
             self.register_buffer("qk_band_ids", band_ids, persistent=False)
-            self.qk_band_log_scale = nn.Parameter(
-                torch.zeros(self.n_head * self.qk_n_bands)
-            )
+            if self.qk_band_mode == "learned":
+                self.qk_band_log_scale = nn.Parameter(
+                    torch.zeros(self.n_head * self.qk_n_bands)
+                )
+            else:
+                if config.qk_band_scales is None:
+                    raise ValueError("qk_band_scales is required for fixed band QK")
+                if len(config.qk_band_scales) != self.qk_n_bands:
+                    raise ValueError("qk_band_scales length must match qk_n_bands")
+                if any(scale <= 0.0 for scale in config.qk_band_scales):
+                    raise ValueError("qk_band_scales must all be positive")
+                band_scale = torch.tensor(config.qk_band_scales, dtype=torch.float32)
+                band_scale = band_scale.view(1, self.qk_n_bands).expand(
+                    self.n_head, -1
+                )
+                self.register_buffer("qk_band_scale", band_scale.contiguous())
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
         self.flash = hasattr(F, "scaled_dot_product_attention")
@@ -117,13 +135,19 @@ class CausalSelfAttention(nn.Module):
             ids.extend([band] * width)
         return torch.tensor(ids, dtype=torch.long)
 
+    def get_qk_band_scale(self) -> torch.Tensor:
+        if self.qk_band_mode == "learned":
+            return self.qk_band_log_scale.float().clamp(-3.0, 3.0).exp().view(
+                self.n_head, self.qk_n_bands
+            )
+        return self.qk_band_scale.float()
+
     def apply_qk_metric(
         self, q: torch.Tensor, k: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         if self.qk_score != "band":
             return q, k
-        band_scale = self.qk_band_log_scale.float().clamp(-3.0, 3.0).exp()
-        band_scale = band_scale.view(self.n_head, self.qk_n_bands)
+        band_scale = self.get_qk_band_scale()
         coord_scale = band_scale.gather(
             1,
             self.qk_band_ids.view(1, self.head_dim).expand(self.n_head, -1),
@@ -736,14 +760,35 @@ def clone_state_dict_to_cpu(model: nn.Module) -> Dict[str, torch.Tensor]:
     return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
 
+def parse_qk_band_scales(value: Optional[str]) -> Optional[Tuple[float, ...]]:
+    if value is None or value.strip() == "":
+        return None
+    try:
+        scales = tuple(float(part.strip()) for part in value.split(","))
+    except ValueError as exc:
+        raise SystemExit("--qk-band-scales must be a comma-separated float list") from exc
+    if not scales:
+        return None
+    if any(scale <= 0.0 for scale in scales):
+        raise SystemExit("--qk-band-scales values must all be positive")
+    return scales
+
+
+def format_qk_band_scales(scales: Optional[Tuple[float, ...]]) -> str:
+    if scales is None:
+        return ""
+    return ",".join(f"{scale:g}" for scale in scales)
+
+
 @torch.no_grad()
 def qk_band_scale_stats(model: nn.Module) -> Dict[str, float]:
     source = getattr(model, "_orig_mod", model)
     scales = []
     for module in source.modules():
-        param = getattr(module, "qk_band_log_scale", None)
-        if param is not None:
-            scale = param.detach().float().clamp(-3.0, 3.0).exp().cpu()
+        if not hasattr(module, "get_qk_band_scale"):
+            continue
+        scale = module.get_qk_band_scale().detach().float().cpu()
+        if scale.numel() > 0:
             scales.append(scale.flatten())
     if not scales:
         return {}
@@ -799,7 +844,18 @@ def train_one_variant(
     print(f"\n=== {variant} ===")
     print(f"parameters: {count_parameters(model):,}")
     print(f"optimizer: {args.optimizer}")
-    print(f"qk_score: {model_config.qk_score} | qk_n_bands: {model_config.qk_n_bands}")
+    qk_message = f"qk_score: {model_config.qk_score}"
+    if model_config.qk_score == "band":
+        qk_message += (
+            f" | qk_n_bands: {model_config.qk_n_bands}"
+            f" | qk_band_mode: {model_config.qk_band_mode}"
+        )
+        if model_config.qk_band_scales is not None:
+            qk_message += (
+                f" | qk_band_scales: "
+                f"{format_qk_band_scales(model_config.qk_band_scales)}"
+            )
+    print(qk_message)
     with log_path.open("w", encoding="utf-8") as log_file:
         for iter_num in range(args.max_iters + 1):
             if iter_num % args.eval_interval == 0 or iter_num == args.max_iters:
@@ -887,6 +943,14 @@ def train_one_variant(
         "n_unique_layers": model_config.n_unique_layers or model_config.n_layer,
         "qk_score": model_config.qk_score,
         "qk_n_bands": model_config.qk_n_bands,
+        "qk_band_mode": (
+            model_config.qk_band_mode if model_config.qk_score == "band" else ""
+        ),
+        "qk_band_scales": (
+            format_qk_band_scales(model_config.qk_band_scales)
+            if model_config.qk_score == "band"
+            else ""
+        ),
         "final_train_loss": final_losses["train"],
         "final_val_loss": final_losses["val"],
         "best_val_loss": best_val,
@@ -927,6 +991,8 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
         "n_unique_layers",
         "qk_score",
         "qk_n_bands",
+        "qk_band_mode",
+        "qk_band_scales",
         "final_train_loss",
         "final_val_loss",
         "best_val_loss",
@@ -1042,6 +1108,20 @@ def parse_args() -> argparse.Namespace:
         help="Number of equal-width coefficient bands per attention head when "
         "--qk-score=band.",
     )
+    parser.add_argument(
+        "--qk-band-mode",
+        choices=("learned", "fixed"),
+        default="learned",
+        help="Band-QK scale mode. 'learned' trains a per-head, per-band metric; "
+        "'fixed' uses --qk-band-scales as a non-trainable per-band metric.",
+    )
+    parser.add_argument(
+        "--qk-band-scales",
+        type=str,
+        default=None,
+        help="Comma-separated positive per-band scales for --qk-band-mode=fixed, "
+        "for example '0.8,0.6,0.4,0.2'.",
+    )
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--bias", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
@@ -1092,11 +1172,26 @@ def main() -> None:
     if args.n_embd % args.n_head != 0:
         raise SystemExit("--n-embd must be divisible by --n-head")
     head_dim = args.n_embd // args.n_head
+    qk_band_scales = parse_qk_band_scales(args.qk_band_scales)
     if args.qk_score == "band":
         if args.qk_n_bands < 1:
             raise SystemExit("--qk-n-bands must be at least 1")
         if args.qk_n_bands > head_dim:
             raise SystemExit("--qk-n-bands cannot exceed head_dim")
+        if args.qk_band_mode == "fixed":
+            if qk_band_scales is None:
+                raise SystemExit("--qk-band-scales is required for fixed band QK")
+            if len(qk_band_scales) != args.qk_n_bands:
+                raise SystemExit("--qk-band-scales length must equal --qk-n-bands")
+            args.qk_band_scales = format_qk_band_scales(qk_band_scales)
+        else:
+            if qk_band_scales is not None:
+                raise SystemExit("--qk-band-scales is only used with fixed band QK")
+            args.qk_band_scales = ""
+    else:
+        qk_band_scales = None
+        args.qk_band_mode = ""
+        args.qk_band_scales = ""
     if hasattr(torch, "set_float32_matmul_precision"):
         torch.set_float32_matmul_precision("high")
 
@@ -1136,6 +1231,8 @@ def main() -> None:
         n_unique_layers=args.n_unique_layers,
         qk_score=args.qk_score,
         qk_n_bands=args.qk_n_bands,
+        qk_band_mode=args.qk_band_mode,
+        qk_band_scales=qk_band_scales,
     )
     if args.variant == "all":
         variants = list(LEGACY_VARIANTS)

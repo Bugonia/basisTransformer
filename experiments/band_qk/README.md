@@ -9,9 +9,20 @@ band  score = q^T G_band k / sqrt(head_dim)
 ```
 
 `G_band` is a positive diagonal metric that is constant inside each head-local
-coefficient band. It is initialized to the identity, so the band run starts
-exactly as standard attention and can learn to upweight or downweight routing
-signals from different coefficient bands.
+coefficient band. Two modes are supported:
+
+```text
+learned  starts from identity and trains one scale per layer/head/band
+fixed    uses non-trainable per-band scales shared by every layer and head
+```
+
+The fixed mode is useful for testing an explicit low-pass QK prior. The current
+default keeps every band scale below 1:
+
+```text
+bands=4: 0.8, 0.6, 0.4, 0.2
+bands=8: 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2
+```
 
 ## Default Setup
 
@@ -27,6 +38,8 @@ n_embd = 512
 head_dim = 64
 qk_score = band
 qk_n_bands = 4
+qk_band_mode = fixed
+qk_band_scales = 0.8,0.6,0.4,0.2
 block_size = 512
 batch_size = 256
 max_iters = 100000
@@ -39,8 +52,8 @@ adamw_fallback_learning_rate = 2e-4
 seeds = 1, 2
 ```
 
-The default run launches 2 jobs: `band x seed1/seed2`. The dot-product baseline
-is reused from the prior optimizer sweep:
+The default run launches 2 jobs: `fixed band x seed1/seed2`. The dot-product
+baseline is reused from the prior optimizer sweep:
 
 ```text
 results/enwik8_optimizer_sweep_standard_pre_layernorm_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k/
@@ -62,6 +75,11 @@ GPUS="0 1 2 3" bash experiments/band_qk/run_band_qk.sh
 
 QK_N_BANDS=8 bash experiments/band_qk/run_band_qk.sh
 
+QK_BAND_MODE=fixed QK_BAND_SCALES="0.75,0.5,0.35,0.25" \
+  bash experiments/band_qk/run_band_qk.sh
+
+QK_BAND_MODE=learned bash experiments/band_qk/run_band_qk.sh
+
 OPTIMIZER=adamw MAX_ITERS=30000 LR_DECAY_ITERS=30000 EARLY_STOP_PATIENCE=0 \
   bash experiments/band_qk/run_band_qk.sh
 ```
@@ -72,7 +90,7 @@ aggregate CSV under `reports/`.
 ## Monitor
 
 ```bash
-BASE_RUN=enwik8_band_qk_standard_pre_layernorm_muon_8l_512d_ctx512_bs256_bands4_test005_100k_earlystop10_lrdecay30k
+BASE_RUN=enwik8_band_qk_standard_pre_layernorm_muon_8l_512d_ctx512_bs256_fixed_bands4_s0p8-0p6-0p4-0p2_test005_100k_earlystop10_lrdecay30k
 
 python monitor_runs.py \
   --base-run "$BASE_RUN" \
@@ -83,7 +101,7 @@ python monitor_runs.py \
 ## Summarize
 
 ```bash
-BASE_RUN=enwik8_band_qk_standard_pre_layernorm_muon_8l_512d_ctx512_bs256_bands4_test005_100k_earlystop10_lrdecay30k
+BASE_RUN=enwik8_band_qk_standard_pre_layernorm_muon_8l_512d_ctx512_bs256_fixed_bands4_s0p8-0p6-0p4-0p2_test005_100k_earlystop10_lrdecay30k
 
 python experiments/band_qk/summarize_band_qk.py \
   "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
@@ -102,9 +120,12 @@ python experiments/band_qk/summarize_band_qk.py \
   --baseline-qk-score dot
 ```
 
-The summary also records the learned band metric statistics:
+The summary records the band mode, fixed scale string, and realized metric
+statistics:
 
 ```text
+qk_band_mode
+qk_band_scales
 qk_band_scale_mean
 qk_band_scale_min
 qk_band_scale_max
@@ -119,6 +140,8 @@ qk_band_scale_max
   --variant standard \
   --qk-score band \
   --qk-n-bands 4 \
+  --qk-band-mode fixed \
+  --qk-band-scales 0.8,0.6,0.4,0.2 \
   --n-layer 8 \
   --n-head 8 \
   --n-embd 512 \
