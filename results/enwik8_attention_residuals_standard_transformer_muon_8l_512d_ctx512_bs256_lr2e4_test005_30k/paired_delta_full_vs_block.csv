@@ -1,3 +1,0 @@
-seed,full_minus_block_best_val_loss,full_minus_block_test_loss,full_minus_block_final_val_loss,full_minus_block_elapsed_min,full_minus_block_tokens_per_sec
-1,-0.0006,0.0008,-0.0007,146.3,-98000
-2,-0.0007,-0.0008,-0.0006,145.8,-97000

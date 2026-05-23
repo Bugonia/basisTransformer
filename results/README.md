@@ -77,21 +77,6 @@ Muon        0.8211     0.8355      68500
 delta      -0.0182    -0.0191
 ```
 
-## enwik8 Attention Residuals, Muon, 8L 512D
-
-- Folder:
-  [`enwik8_attention_residuals_standard_transformer_muon_8l_512d_ctx512_bs256_lr2e4_test005_30k`](enwik8_attention_residuals_standard_transformer_muon_8l_512d_ctx512_bs256_lr2e4_test005_30k/)
-- Preliminary result: Full AttnRes is effectively tied with Block AttnRes on
-  test loss but is about 1.59x slower. This archived result is AttnRes-only; a
-  strict same-budget comparison should add `standard` under the same `BASE_RUN`
-  and regenerate the summary.
-
-```text
-variant                  best val   test loss   tok/s
-standard_attnres_block   0.9319     0.9493      264k
-standard_attnres_full    0.9313     0.9493      166k
-```
-
 ## enwik8 loop Transformer sweep, Muon, 8L 512D
 
 - Folder:

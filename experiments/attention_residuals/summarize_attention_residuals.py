@@ -17,7 +17,11 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 
 DEFAULT_BASE_RUN = (
     "enwik8_attention_residuals_standard_transformer_muon_8l_512d_ctx512_"
-    "bs256_lr2e4_test005_30k"
+    "bs256_lr2e3_test005_100k_earlystop10_lrdecay30k"
+)
+DEFAULT_STANDARD_BASE_RUN = (
+    "enwik8_optimizer_sweep_standard_pre_layernorm_8l_512d_ctx512_bs256_"
+    "test005_100k_earlystop10_lrdecay30k"
 )
 
 PER_SEED_COLUMNS = [
@@ -93,6 +97,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--base-run", default=DEFAULT_BASE_RUN)
+    parser.add_argument("--standard-base-run", default=DEFAULT_STANDARD_BASE_RUN)
     parser.add_argument(
         "--output-dir",
         default=None,
@@ -621,7 +626,8 @@ def write_readme(
 def main() -> None:
     args = parse_args()
     patterns = args.patterns or [
-        f"runs/block_residuals/{args.base_run}_seed*/summary.csv"
+        f"runs/block_residuals/{args.base_run}_seed*/summary.csv",
+        f"runs/block_residuals/{args.standard_base_run}_seed*_muon_lr2e3/summary.csv",
     ]
     output_dir = Path(args.output_dir or f"results/{args.base_run}")
 

@@ -4,12 +4,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-BASE_RUN="${BASE_RUN:-enwik8_attention_residuals_standard_transformer_muon_8l_512d_ctx512_bs256_lr2e4_test005_30k}"
+BASE_RUN="${BASE_RUN:-enwik8_attention_residuals_standard_transformer_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k_earlystop10_lrdecay30k}"
+STANDARD_BASE_RUN="${STANDARD_BASE_RUN:-enwik8_optimizer_sweep_standard_pre_layernorm_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k}"
 PYTHON_BIN="${PYTHON_BIN:-.venv_cu128/bin/python}"
 TRAIN_SCRIPT="${TRAIN_SCRIPT:-train_block_residuals.py}"
 DATA_FILE="${DATA_FILE:-data/enwik8.txt}"
 
-VARIANTS_STRING="${VARIANTS:-standard standard_attnres_block standard_attnres_full}"
+VARIANTS_STRING="${VARIANTS:-standard_attnres_block standard_attnres_full}"
 SEEDS_STRING="${SEEDS:-1 2}"
 read -r -a VARIANT_ARRAY <<< "$VARIANTS_STRING"
 read -r -a SEED_ARRAY <<< "$SEEDS_STRING"
@@ -23,15 +24,15 @@ N_EMBD="${N_EMBD:-512}"
 BATCH_SIZE="${BATCH_SIZE:-256}"
 BLOCK_SIZE="${BLOCK_SIZE:-512}"
 ATTNRES_N_BLOCKS="${ATTNRES_N_BLOCKS:-8}"
-MAX_ITERS="${MAX_ITERS:-30000}"
+MAX_ITERS="${MAX_ITERS:-100000}"
 LR_DECAY_ITERS="${LR_DECAY_ITERS:-30000}"
 EVAL_INTERVAL="${EVAL_INTERVAL:-1000}"
 EVAL_ITERS="${EVAL_ITERS:-20}"
-EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-0}"
+EARLY_STOP_PATIENCE="${EARLY_STOP_PATIENCE:-10}"
 VAL_FRAC="${VAL_FRAC:-0.005}"
 TEST_FRAC="${TEST_FRAC:-0.005}"
-LEARNING_RATE="${LEARNING_RATE:-2e-4}"
-MIN_LR="${MIN_LR:-2e-5}"
+LEARNING_RATE="${LEARNING_RATE:-2e-3}"
+MIN_LR="${MIN_LR:-2e-4}"
 WARMUP_ITERS="${WARMUP_ITERS:-500}"
 WEIGHT_DECAY="${WEIGHT_DECAY:-0.01}"
 BETA1="${BETA1:-0.9}"
@@ -165,17 +166,27 @@ done
 
 wait_wave
 
+standard_pattern="runs/block_residuals/${STANDARD_BASE_RUN}_seed*_muon_lr2e3/summary.csv"
+if ! compgen -G "$standard_pattern" >/dev/null; then
+  echo "Missing same-budget standard Muon baseline summaries: ${standard_pattern}" >&2
+  echo "Run experiments/optimizer_sweep/run_optimizer_sweep.sh or set STANDARD_BASE_RUN." >&2
+  exit 1
+fi
+
 "$PYTHON_BIN" summarize_runs.py \
   "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
+  "$standard_pattern" \
   --paired-baseline standard \
   > "reports/${BASE_RUN}_aggregate.csv"
 
 "$PYTHON_BIN" experiments/attention_residuals/summarize_attention_residuals.py \
-  --base-run "$BASE_RUN" \
+  "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
+  "$standard_pattern" \
   --output-dir "results/${BASE_RUN}"
 
 "$PYTHON_BIN" plot_results_svg.py \
   "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
+  "$standard_pattern" \
   --baseline standard \
   --title "Attention Residuals on Standard Transformer" \
   --output "reports/${BASE_RUN}.svg"
