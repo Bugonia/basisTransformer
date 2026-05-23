@@ -32,3 +32,29 @@ To include the already-trained baseline in a fresh comparison:
 VARIANTS="standard standard_attnres_block standard_attnres_full" \
   experiments/attention_residuals/run_attention_residuals.sh
 ```
+
+## Summarize a completed run
+
+The launcher writes a compact CSV/SVG report under `reports/` and a richer
+attention-residuals summary under `results/$BASE_RUN/`.
+
+If the jobs already finished, summarize without rerunning training:
+
+```bash
+.venv_cu128/bin/python experiments/attention_residuals/summarize_attention_residuals.py
+```
+
+For the default run name this writes:
+
+- `results/enwik8_attention_residuals_standard_transformer_muon_8l_512d_ctx512_bs256_lr2e4_test005_30k/per_seed_summary.csv`
+- `results/enwik8_attention_residuals_standard_transformer_muon_8l_512d_ctx512_bs256_lr2e4_test005_30k/aggregate_summary.csv`
+- `results/enwik8_attention_residuals_standard_transformer_muon_8l_512d_ctx512_bs256_lr2e4_test005_30k/paired_delta_full_vs_block.csv`
+- `results/enwik8_attention_residuals_standard_transformer_muon_8l_512d_ctx512_bs256_lr2e4_test005_30k/README.md`
+
+Use a custom run prefix if `BASE_RUN` was changed:
+
+```bash
+.venv_cu128/bin/python experiments/attention_residuals/summarize_attention_residuals.py \
+  --base-run "$BASE_RUN" \
+  --output-dir "results/$BASE_RUN"
+```

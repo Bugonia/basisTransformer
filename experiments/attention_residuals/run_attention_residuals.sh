@@ -170,6 +170,10 @@ wait_wave
   --paired-baseline standard_attnres_block \
   > "reports/${BASE_RUN}_aggregate.csv"
 
+"$PYTHON_BIN" experiments/attention_residuals/summarize_attention_residuals.py \
+  --base-run "$BASE_RUN" \
+  --output-dir "results/${BASE_RUN}"
+
 "$PYTHON_BIN" plot_results_svg.py \
   "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
   --baseline standard_attnres_block \
