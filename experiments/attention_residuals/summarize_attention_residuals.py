@@ -71,6 +71,16 @@ PAIRED_COLUMNS = [
     "full_minus_block_tokens_per_sec",
 ]
 
+STANDARD_DELTA_COLUMNS = [
+    "seed",
+    "variant",
+    "best_val_loss_delta_vs_standard",
+    "test_loss_delta_vs_standard",
+    "final_val_loss_delta_vs_standard",
+    "elapsed_sec_delta_vs_standard",
+    "tokens_per_sec_delta_vs_standard",
+]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -315,6 +325,53 @@ def paired_full_vs_block(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return out
 
 
+def paired_vs_standard(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    by_seed: Dict[str, Dict[str, Dict[str, str]]] = defaultdict(dict)
+    for row in rows:
+        seed = row.get("seed", "")
+        if not seed:
+            continue
+        by_seed[seed][row.get("variant", "")] = row
+
+    out: List[Dict[str, str]] = []
+    for seed in sorted(by_seed, key=lambda value: safe_int(value)):
+        variants = by_seed[seed]
+        standard = variants.get("standard")
+        if standard is None:
+            continue
+        for variant in sorted(variants, key=variant_sort_key):
+            if variant == "standard":
+                continue
+            row = variants[variant]
+            out.append(
+                {
+                    "seed": seed,
+                    "variant": variant,
+                    "best_val_loss_delta_vs_standard": fmt_number(
+                        safe_float(row.get("best_val_loss"))
+                        - safe_float(standard.get("best_val_loss"))
+                    ),
+                    "test_loss_delta_vs_standard": fmt_number(
+                        safe_float(row.get("test_loss"))
+                        - safe_float(standard.get("test_loss"))
+                    ),
+                    "final_val_loss_delta_vs_standard": fmt_number(
+                        safe_float(row.get("final_val_loss"))
+                        - safe_float(standard.get("final_val_loss"))
+                    ),
+                    "elapsed_sec_delta_vs_standard": fmt_number(
+                        safe_float(row.get("elapsed_sec"))
+                        - safe_float(standard.get("elapsed_sec"))
+                    ),
+                    "tokens_per_sec_delta_vs_standard": fmt_number(
+                        safe_float(row.get("tokens_per_sec"))
+                        - safe_float(standard.get("tokens_per_sec"))
+                    ),
+                }
+            )
+    return out
+
+
 def write_csv(path: Path, rows: List[Dict[str, str]], columns: Sequence[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
@@ -342,6 +399,7 @@ def write_readme(
     per_seed: List[Dict[str, str]],
     aggregate_rows: List[Dict[str, str]],
     paired_rows: List[Dict[str, str]],
+    standard_delta_rows: List[Dict[str, str]],
     patterns: Sequence[str],
 ) -> None:
     aggregate_table = []
@@ -398,6 +456,19 @@ def write_readme(
                 f"{safe_float(row['full_minus_block_test_loss']):+.4f}",
                 f"{safe_float(row['full_minus_block_elapsed_sec']) / 60:+.1f} min",
                 f"{safe_float(row['full_minus_block_tokens_per_sec']) / 1000:+.0f}k",
+            ]
+        )
+
+    standard_delta_table = []
+    for row in standard_delta_rows:
+        standard_delta_table.append(
+            [
+                row["seed"],
+                row["variant"],
+                f"{safe_float(row['best_val_loss_delta_vs_standard']):+.4f}",
+                f"{safe_float(row['test_loss_delta_vs_standard']):+.4f}",
+                f"{safe_float(row['elapsed_sec_delta_vs_standard']) / 60:+.1f} min",
+                f"{safe_float(row['tokens_per_sec_delta_vs_standard']) / 1000:+.0f}k",
             ]
         )
 
@@ -474,6 +545,27 @@ def write_readme(
                 "Negative loss delta means Full AttnRes is better; positive tok/s "
                 "delta means Full is faster."
             )
+        if standard_delta_rows:
+            by_variant: Dict[str, List[Dict[str, str]]] = defaultdict(list)
+            for row in standard_delta_rows:
+                by_variant[row["variant"]].append(row)
+            for variant in sorted(by_variant, key=variant_sort_key):
+                group = by_variant[variant]
+                val_avg, val_std = summarize_paired(
+                    group, "best_val_loss_delta_vs_standard"
+                )
+                test_avg, test_std = summarize_paired(
+                    group, "test_loss_delta_vs_standard"
+                )
+                speed_avg, speed_std = summarize_paired(
+                    group, "tokens_per_sec_delta_vs_standard"
+                )
+                lines.append(
+                    f"- Paired `{variant}` minus `standard`: "
+                    f"best-val {val_avg:+.4f} +/- {val_std:.4f}, "
+                    f"test {test_avg:+.4f} +/- {test_std:.4f}, "
+                    f"tok/s {speed_avg / 1000:+.0f}k +/- {speed_std / 1000:.0f}k."
+                )
 
     if paired_rows:
         lines.extend(["", "## Paired Full Minus Block", ""])
@@ -482,6 +574,22 @@ def write_readme(
                 paired_table,
                 [
                     "seed",
+                    "best val delta",
+                    "test delta",
+                    "elapsed delta",
+                    "tok/s delta",
+                ],
+            )
+        )
+
+    if standard_delta_rows:
+        lines.extend(["", "## Paired Delta Vs Standard", ""])
+        lines.append(
+            markdown_table(
+                standard_delta_table,
+                [
+                    "seed",
+                    "variant",
                     "best val delta",
                     "test delta",
                     "elapsed delta",
@@ -523,15 +631,29 @@ def main() -> None:
 
     aggregate_rows = aggregate(rows)
     paired_rows = paired_full_vs_block(rows)
+    standard_delta_rows = paired_vs_standard(rows)
 
     write_csv(output_dir / "per_seed_summary.csv", rows, PER_SEED_COLUMNS)
     write_csv(output_dir / "aggregate_summary.csv", aggregate_rows, AGGREGATE_COLUMNS)
     write_csv(output_dir / "paired_delta_full_vs_block.csv", paired_rows, PAIRED_COLUMNS)
-    write_readme(output_dir / "README.md", rows, aggregate_rows, paired_rows, patterns)
+    write_csv(
+        output_dir / "paired_delta_vs_standard.csv",
+        standard_delta_rows,
+        STANDARD_DELTA_COLUMNS,
+    )
+    write_readme(
+        output_dir / "README.md",
+        rows,
+        aggregate_rows,
+        paired_rows,
+        standard_delta_rows,
+        patterns,
+    )
 
     print(f"wrote {output_dir / 'per_seed_summary.csv'}")
     print(f"wrote {output_dir / 'aggregate_summary.csv'}")
     print(f"wrote {output_dir / 'paired_delta_full_vs_block.csv'}")
+    print(f"wrote {output_dir / 'paired_delta_vs_standard.csv'}")
     print(f"wrote {output_dir / 'README.md'}")
 
 

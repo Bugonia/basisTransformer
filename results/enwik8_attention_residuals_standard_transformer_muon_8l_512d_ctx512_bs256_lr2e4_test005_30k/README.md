@@ -3,6 +3,10 @@
 This folder records the first Attention Residuals reproduction attempt on the
 project's standard decoder-only Transformer architecture.
 
+This archived result is AttnRes-only. A strict same-budget comparison must add
+`standard` runs under the same `BASE_RUN`, optimizer, learning-rate schedule,
+seeds, and 30k-step budget.
+
 ## Setup
 
 - Dataset: enwik8 text file, `latin-1` encoding
@@ -21,13 +25,19 @@ project's standard decoder-only Transformer architecture.
 - Seeds: 1 and 2
 - Evaluation: every 1000 iterations, 20 eval batches
 
-The run intentionally compares only:
+This preliminary run intentionally compares only:
 
 - `standard_attnres_block`
 - `standard_attnres_full`
 
-The standard Transformer was not rerun in this job because it had already been
-trained repeatedly.
+The strict same-budget launcher now defaults to:
+
+```text
+standard standard_attnres_block standard_attnres_full
+```
+
+With `RESUME=1`, rerunning the launcher after this preliminary run skips the
+completed AttnRes jobs and fills in the missing `standard` jobs.
 
 ## Attention Residuals Results
 
@@ -58,36 +68,6 @@ Full AttnRes has a tiny best-validation advantage, but test loss is effectively
 tied with Block AttnRes. The throughput cost is large: Full is about 1.59x
 slower than Block in this implementation.
 
-## Standard Transformer Reference
-
-The available Muon standard Transformer result is from the optimizer sweep:
-
-[`../enwik8_optimizer_sweep_standard_pre_layernorm_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k`](../enwik8_optimizer_sweep_standard_pre_layernorm_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k/)
-
-That run uses the same dataset, model scale, context length, batch size, dropout,
-precision, seeds, and Muon-with-AdamW-fallback optimizer structure. It differs
-in two important ways:
-
-- The standard Muon run uses main LR `2e-3`, min LR `2e-4`.
-- The standard Muon run trains with a 100k limit and early stopping patience 10,
-  while this AttnRes run trains for 30k fixed steps.
-
-Because of those differences, the following comparison is a reference baseline,
-not a strictly matched budget comparison.
-
-| Variant | Optimizer | Budget | Best Val Loss | Test Loss | Best Iter | Throughput |
-| --- | --- | --- | ---: | ---: | ---: | ---: |
-| `standard` | Muon | 100k limit, early stop | 0.8211 +/- 0.0018 | 0.8355 +/- 0.0053 | 68500 +/- 13435 | 1.135M tok/s |
-| `standard_attnres_block` | Muon | 30k fixed | 0.9319 +/- 0.0055 | 0.9493 +/- 0.0073 | 30000 +/- 0 | 264k tok/s |
-| `standard_attnres_full` | Muon | 30k fixed | 0.9313 +/- 0.0055 | 0.9493 +/- 0.0062 | 30000 +/- 0 | 166k tok/s |
-
-Relative to the available standard Muon reference, the current AttnRes run is
-much worse in both validation and test loss. This does not isolate whether the
-gap comes from the Attention Residuals implementation, the smaller Muon LR, the
-30k training budget, or the lack of the paper's efficient block/two-phase
-implementation. It does show that this naive PyTorch AttnRes reproduction is
-not yet competitive with the project's standard Transformer baseline.
-
 ## Interpretation
 
 The useful conclusions from this run are:
@@ -96,10 +76,8 @@ The useful conclusions from this run are:
    AttnRes at this scale.
 2. Full AttnRes is substantially slower and uses substantially more memory, so
    future experiments should focus on Block AttnRes.
-3. The current AttnRes implementation should be treated as a mechanism check,
-   not as an efficient reproduction of the paper. Closing the gap requires a
-   matched standard baseline run and likely checkpointing, coarser block size
-   sweeps, and two-phase/fused block attention.
+3. This preliminary result is not enough to judge AttnRes against the standard
+   Transformer. The strict comparison requires the same-budget `standard` runs.
 
 ## Files
 
@@ -109,5 +87,3 @@ The useful conclusions from this run are:
   Residuals results.
 - [`paired_delta_full_vs_block.csv`](paired_delta_full_vs_block.csv): paired
   Full-minus-Block deltas by seed.
-- [`standard_reference_comparison.csv`](standard_reference_comparison.csv):
-  Attention Residuals results plus the available standard Muon reference.

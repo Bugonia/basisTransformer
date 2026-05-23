@@ -9,7 +9,7 @@ PYTHON_BIN="${PYTHON_BIN:-.venv_cu128/bin/python}"
 TRAIN_SCRIPT="${TRAIN_SCRIPT:-train_block_residuals.py}"
 DATA_FILE="${DATA_FILE:-data/enwik8.txt}"
 
-VARIANTS_STRING="${VARIANTS:-standard_attnres_block standard_attnres_full}"
+VARIANTS_STRING="${VARIANTS:-standard standard_attnres_block standard_attnres_full}"
 SEEDS_STRING="${SEEDS:-1 2}"
 read -r -a VARIANT_ARRAY <<< "$VARIANTS_STRING"
 read -r -a SEED_ARRAY <<< "$SEEDS_STRING"
@@ -167,7 +167,7 @@ wait_wave
 
 "$PYTHON_BIN" summarize_runs.py \
   "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
-  --paired-baseline standard_attnres_block \
+  --paired-baseline standard \
   > "reports/${BASE_RUN}_aggregate.csv"
 
 "$PYTHON_BIN" experiments/attention_residuals/summarize_attention_residuals.py \
@@ -176,6 +176,6 @@ wait_wave
 
 "$PYTHON_BIN" plot_results_svg.py \
   "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
-  --baseline standard_attnres_block \
+  --baseline standard \
   --title "Attention Residuals on Standard Transformer" \
   --output "reports/${BASE_RUN}.svg"
