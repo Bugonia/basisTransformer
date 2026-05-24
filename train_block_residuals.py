@@ -53,17 +53,31 @@ GATED_ATTN_VARIANTS = (
     "standard_gated_attn",
     "standard_swiglu_gated_attn",
 )
+FLA_MIXER_VARIANTS = (
+    "standard_linear_attn",
+    "standard_gla",
+    "standard_retnet",
+    "standard_mamba2",
+)
 STANDARD_TRANSFORMER_VARIANTS = (
     "standard",
     "standard_swiglu",
     "standard_gated_attn",
     "standard_swiglu_gated_attn",
+    "standard_linear_attn",
+    "standard_gla",
+    "standard_retnet",
+    "standard_mamba2",
 )
 VARIANTS = (
     "standard",
     "standard_swiglu",
     "standard_gated_attn",
     "standard_swiglu_gated_attn",
+    "standard_linear_attn",
+    "standard_gla",
+    "standard_retnet",
+    "standard_mamba2",
     "standard_fa",
     "standard_attnres_full",
     "standard_attnres_block",
@@ -83,6 +97,18 @@ def ffn_kind_for_variant(variant: str) -> str:
 
 def attention_gate_for_variant(variant: str) -> str:
     return "sdpa_elementwise_sigmoid_g1" if variant in GATED_ATTN_VARIANTS else "none"
+
+
+def sequence_mixer_for_variant(variant: str) -> str:
+    if variant == "standard_linear_attn":
+        return "fla_linear_attention"
+    if variant == "standard_gla":
+        return "fla_gated_linear_attention"
+    if variant == "standard_retnet":
+        return "fla_multiscale_retention"
+    if variant == "standard_mamba2":
+        return "fla_mamba2"
+    return "softmax_attention"
 
 
 def swiglu_hidden_dim(n_embd: int) -> int:
@@ -229,6 +255,83 @@ class CausalSelfAttention(nn.Module):
         y = y.transpose(1, 2).contiguous().view(batch, seq_len, channels)
         y = self.c_proj(y)
         return self.resid_dropout(y)
+
+
+class FlaSequenceMixer(nn.Module):
+    """Adapter for optional flash-linear-attention token mixers."""
+
+    CLASS_NAMES = {
+        "standard_linear_attn": "LinearAttention",
+        "standard_gla": "GatedLinearAttention",
+        "standard_retnet": "MultiScaleRetention",
+        "standard_mamba2": "Mamba2",
+    }
+
+    def __init__(self, config: ModelConfig, layer_idx: int):
+        super().__init__()
+        try:
+            import fla.layers as fla_layers  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise ImportError(
+                "FLA token-mixer variants require the optional "
+                "`flash-linear-attention` package. Install it in the training "
+                "environment before running standard_linear_attn, standard_gla, "
+                "standard_retnet, or standard_mamba2."
+            ) from exc
+        class_name = self.CLASS_NAMES[config.variant]
+        layer_cls = getattr(fla_layers, class_name, None)
+        if layer_cls is None:
+            raise ImportError(
+                f"flash-linear-attention does not expose fla.layers.{class_name}. "
+                "Please update the package or choose another mixer variant."
+            )
+        kwargs = self._filter_kwargs(
+            layer_cls,
+            {
+                "hidden_size": config.n_embd,
+                "num_heads": config.n_head,
+                "num_kv_heads": config.n_head,
+                "head_dim": config.n_embd // config.n_head,
+                "mode": "chunk",
+                "layer_idx": layer_idx,
+                "attention_dropout": config.dropout,
+                "dropout": config.dropout,
+                "use_short_conv": False,
+                "use_output_gate": True,
+                "expand_k": 1.0,
+                "expand_v": 1.0,
+            },
+        )
+        self.layer = layer_cls(**kwargs)
+        self.resid_dropout = nn.Dropout(config.dropout)
+
+    @staticmethod
+    def _filter_kwargs(layer_cls: type, kwargs: Dict[str, object]) -> Dict[str, object]:
+        signature = inspect.signature(layer_cls)
+        if any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        ):
+            return kwargs
+        return {key: value for key, value in kwargs.items() if key in signature.parameters}
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        y = self.layer(x)
+        if isinstance(y, tuple):
+            y = y[0]
+        return self.resid_dropout(y)
+
+
+def make_sequence_mixer(
+    config: ModelConfig,
+    layer_idx: int,
+    use_output_projection: bool = True,
+) -> nn.Module:
+    if config.variant in FLA_MIXER_VARIANTS:
+        if not use_output_projection:
+            raise ValueError("FLA mixer variants require their own output projection")
+        return FlaSequenceMixer(config, layer_idx=layer_idx)
+    return CausalSelfAttention(config, use_output_projection=use_output_projection)
 
 
 class FeedForward(nn.Module):
@@ -428,7 +531,7 @@ class OptimizerChain:
 
 
 class Block(nn.Module):
-    def __init__(self, config: ModelConfig):
+    def __init__(self, config: ModelConfig, layer_idx: int = 0):
         super().__init__()
         if config.variant not in VARIANTS:
             raise ValueError(f"Unknown variant {config.variant!r}")
@@ -458,7 +561,11 @@ class Block(nn.Module):
             else nn.Identity()
         )
         use_wo = config.variant != "block_af_no_mid_ln_no_wo"
-        self.attn = CausalSelfAttention(config, use_output_projection=use_wo)
+        self.attn = make_sequence_mixer(
+            config,
+            layer_idx=layer_idx,
+            use_output_projection=use_wo,
+        )
         self.ffn = FeedForward(config)
 
     def n1(self, x: torch.Tensor) -> torch.Tensor:
@@ -545,7 +652,9 @@ class TinyGPT(nn.Module):
                 wte=nn.Embedding(config.vocab_size, config.n_embd),
                 wpe=nn.Embedding(config.block_size, config.n_embd),
                 drop=nn.Dropout(config.dropout),
-                h=nn.ModuleList([Block(config) for _ in range(n_unique_layers)]),
+                h=nn.ModuleList(
+                    [Block(config, layer_idx=i) for i in range(n_unique_layers)]
+                ),
                 ln_f=make_norm(config.n_embd, config.bias, config.norm_kind)
                 if config.norm in ("pre", "both")
                 else nn.Identity(),
@@ -1015,6 +1124,7 @@ def train_one_variant(
     print(f"optimizer: {args.optimizer}")
     if variant in STANDARD_TRANSFORMER_VARIANTS:
         print(
+            f"sequence_mixer: {sequence_mixer_for_variant(variant)} | "
             f"ffn: {ffn_kind_for_variant(variant)} | "
             f"attention_gate: {attention_gate_for_variant(variant)}"
         )
@@ -1141,6 +1251,7 @@ def train_one_variant(
             if variant == "standard_attnres_block"
             else ""
         ),
+        "sequence_mixer": sequence_mixer_for_variant(variant),
         "ffn_kind": ffn_kind_for_variant(variant),
         "attention_gate": attention_gate_for_variant(variant),
         "final_train_loss": final_losses["train"],
@@ -1186,6 +1297,7 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
         "qk_band_mode",
         "qk_band_scales",
         "attnres_n_blocks",
+        "sequence_mixer",
         "ffn_kind",
         "attention_gate",
         "final_train_loss",

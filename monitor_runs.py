@@ -19,6 +19,13 @@ from typing import Dict, Iterable, List, Optional
 
 VARIANTS = (
     "standard",
+    "standard_swiglu",
+    "standard_gated_attn",
+    "standard_swiglu_gated_attn",
+    "standard_linear_attn",
+    "standard_gla",
+    "standard_retnet",
+    "standard_mamba2",
     "standard_fa",
     "block_af",
     "block_af_no_mid_ln",
