@@ -269,6 +269,8 @@ class FlaSequenceMixer(nn.Module):
 
     def __init__(self, config: ModelConfig, layer_idx: int):
         super().__init__()
+        if torch.cuda.is_available():
+            torch.empty((), device="cuda")
         try:
             import fla.layers as fla_layers  # type: ignore[import-not-found]
         except ImportError as exc:

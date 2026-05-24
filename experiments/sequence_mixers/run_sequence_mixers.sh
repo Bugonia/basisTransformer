@@ -52,6 +52,9 @@ fi
 
 if [[ "$CHECK_FLA" == "1" || "$CHECK_FLA" == "true" ]]; then
   if ! "$PYTHON_BIN" - <<'PY'
+import torch
+if torch.cuda.is_available():
+    torch.empty((), device="cuda")
 import fla.layers  # noqa: F401
 PY
   then
