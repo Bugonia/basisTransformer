@@ -269,10 +269,10 @@ class FlaSequenceMixer(nn.Module):
 
     def __init__(self, config: ModelConfig, layer_idx: int):
         super().__init__()
-        if torch.cuda.is_available():
-            torch.empty((), device="cuda")
         try:
+            self._initialize_fla_cuda_backend()
             import fla.layers as fla_layers  # type: ignore[import-not-found]
+            self._initialize_fla_cuda_backend()
         except ImportError as exc:
             raise ImportError(
                 "FLA token-mixer variants require the optional "
@@ -306,6 +306,19 @@ class FlaSequenceMixer(nn.Module):
         )
         self.layer = layer_cls(**kwargs)
         self.resid_dropout = nn.Dropout(config.dropout)
+
+    @staticmethod
+    def _initialize_fla_cuda_backend() -> None:
+        if not torch.cuda.is_available():
+            return
+        torch.empty((), device="cuda")
+        try:
+            import fla.utils as fla_utils  # type: ignore[import-not-found]
+        except ImportError:
+            return
+        fla_utils.device_torch_lib = torch.cuda
+        if hasattr(fla_utils, "device_backend"):
+            fla_utils.device_backend = "cuda"
 
     @staticmethod
     def _filter_kwargs(layer_cls: type, kwargs: Dict[str, object]) -> Dict[str, object]:

@@ -56,6 +56,11 @@ import torch
 if torch.cuda.is_available():
     torch.empty((), device="cuda")
 import fla.layers  # noqa: F401
+import fla.utils as fla_utils
+if torch.cuda.is_available():
+    fla_utils.device_torch_lib = torch.cuda
+    if hasattr(fla_utils, "device_backend"):
+        fla_utils.device_backend = "cuda"
 PY
   then
     echo "Missing optional dependency: flash-linear-attention." >&2
