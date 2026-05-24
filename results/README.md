@@ -93,6 +93,24 @@ standard_attnres_block   0.8212     0.8375      257k
 standard_attnres_full    0.8227     0.8374      163k
 ```
 
+## enwik8 standard component ablation, Muon, optimizer-sweep budget
+
+- Folder:
+  [`enwik8_standard_components_sdpa_g1_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k_earlystop10_lrdecay30k`](enwik8_standard_components_sdpa_g1_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k_earlystop10_lrdecay30k/)
+- Main result: SDPA elementwise G1 gated attention has the lowest mean
+  validation and test loss in this run set. SwiGLU alone is slightly worse
+  than the standard Muon baseline, while SwiGLU plus G1 gating is below the
+  baseline but above G1 gating alone. The best-validation checkpoints occur
+  earlier for the three component variants than for the standard baseline.
+
+```text
+variant                       best val   test loss   best iter   tok/s
+standard                      0.8211     0.8355      68500       1.14M
+standard_swiglu               0.8228     0.8375      44000       578k
+standard_gated_attn           0.8165     0.8288      34500       984k
+standard_swiglu_gated_attn    0.8190     0.8326      30000       542k
+```
+
 ## enwik8 loop Transformer sweep, Muon, 8L 512D
 
 - Folder:

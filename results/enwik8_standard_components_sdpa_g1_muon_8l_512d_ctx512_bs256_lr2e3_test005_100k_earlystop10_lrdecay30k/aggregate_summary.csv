@@ -1,0 +1,5 @@
+variant,n,best_val_loss_mean,best_val_loss_std,test_loss_mean,test_loss_std,best_iter_mean,best_iter_std,elapsed_h_mean,tokens_per_sec_mean
+standard,2,0.8211,0.0018,0.8355,0.0053,68500,13435,2.52,1140000
+standard_swiglu,2,0.8228,0.0020,0.8375,0.0054,44000,5657,3.40,578000
+standard_gated_attn,2,0.8165,0.0025,0.8288,0.0050,34500,2121,1.65,984000
+standard_swiglu_gated_attn,2,0.8190,0.0042,0.8326,0.0070,30000,1414,2.69,542000

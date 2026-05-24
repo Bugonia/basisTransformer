@@ -1,0 +1,7 @@
+seed,variant,best_val_loss_delta_vs_standard,test_loss_delta_vs_standard,tokens_per_sec_delta_vs_standard
+1,standard_swiglu,0.0016,0.0019,-565000
+1,standard_gated_attn,-0.0051,-0.0065,-145000
+1,standard_swiglu_gated_attn,-0.0038,-0.0041,-596000
+2,standard_swiglu,0.0019,0.0021,-552000
+2,standard_gated_attn,-0.0040,-0.0069,-160000
+2,standard_swiglu_gated_attn,-0.0004,-0.0017,-593000

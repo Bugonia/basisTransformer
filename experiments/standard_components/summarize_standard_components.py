@@ -316,6 +316,11 @@ def write_readme(
                     safe_float(row["test_loss_mean"]),
                     safe_float(row["test_loss_std"]),
                 ),
+                fmt_mean_std(
+                    safe_float(row["best_iter_mean"]),
+                    safe_float(row["best_iter_std"]),
+                    digits=0,
+                ),
                 fmt_seconds(safe_float(row["elapsed_sec_mean"])),
                 fmt_tokens_per_sec(safe_float(row["tokens_per_sec_mean"])),
             ]
@@ -372,7 +377,7 @@ def write_readme(
     lines.append(
         markdown_table(
             aggregate_table,
-            ["variant", "n", "best val", "test", "elapsed", "tok/s"],
+            ["variant", "n", "best val", "test", "best iter", "elapsed", "tok/s"],
         )
     )
     if best_test is not None:
