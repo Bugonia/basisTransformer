@@ -17,6 +17,9 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 
 VARIANT_ORDER = [
     "standard",
+    "standard_swiglu",
+    "standard_gated_attn",
+    "standard_swiglu_gated_attn",
     "standard_fa",
     "standard_attnres_block",
     "standard_attnres_full",
@@ -30,6 +33,9 @@ VARIANT_ORDER = [
 ]
 COLORS = {
     "standard": "#2F6FED",
+    "standard_swiglu": "#0E9F6E",
+    "standard_gated_attn": "#D97706",
+    "standard_swiglu_gated_attn": "#9333EA",
     "standard_fa": "#0891B2",
     "standard_attnres_block": "#16A34A",
     "standard_attnres_full": "#9333EA",
@@ -43,6 +49,9 @@ COLORS = {
 }
 LABELS = {
     "standard": "Standard AF",
+    "standard_swiglu": "Standard SwiGLU",
+    "standard_gated_attn": "Standard Gated Attn",
+    "standard_swiglu_gated_attn": "Standard SwiGLU + Gated Attn",
     "standard_fa": "Standard FA",
     "standard_attnres_block": "Standard Block AttnRes",
     "standard_attnres_full": "Standard Full AttnRes",

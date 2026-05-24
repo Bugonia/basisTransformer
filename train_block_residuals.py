@@ -5,6 +5,8 @@ Most variants share the same attention, FFN, normalization, optimizer, dataset
 split, and parameter count. The W_O absorption variants intentionally change
 the attention parameterization to test whether the output projection is needed
 inside block-AF when no middle nonlinearity separates attention from the FFN.
+The standard component ablations intentionally change FFN or attention-gate
+parameterization and report the resulting parameter counts.
 """
 
 from __future__ import annotations
@@ -43,8 +45,25 @@ ATTNRES_VARIANTS = (
     "standard_attnres_full",
     "standard_attnres_block",
 )
+SWIGLU_VARIANTS = (
+    "standard_swiglu",
+    "standard_swiglu_gated_attn",
+)
+GATED_ATTN_VARIANTS = (
+    "standard_gated_attn",
+    "standard_swiglu_gated_attn",
+)
+STANDARD_TRANSFORMER_VARIANTS = (
+    "standard",
+    "standard_swiglu",
+    "standard_gated_attn",
+    "standard_swiglu_gated_attn",
+)
 VARIANTS = (
     "standard",
+    "standard_swiglu",
+    "standard_gated_attn",
+    "standard_swiglu_gated_attn",
     "standard_fa",
     "standard_attnres_full",
     "standard_attnres_block",
@@ -56,6 +75,18 @@ VARIANTS = (
     "block_fa_carry",
     "parallel",
 )
+
+
+def ffn_kind_for_variant(variant: str) -> str:
+    return "swiglu" if variant in SWIGLU_VARIANTS else "gelu"
+
+
+def attention_gate_for_variant(variant: str) -> str:
+    return "sigmoid" if variant in GATED_ATTN_VARIANTS else "none"
+
+
+def swiglu_hidden_dim(n_embd: int) -> int:
+    return max(1, round((8.0 / 3.0) * n_embd))
 
 
 @dataclass
@@ -91,12 +122,18 @@ class CausalSelfAttention(nn.Module):
         self.head_dim = config.n_embd // config.n_head
         self.qk_n_bands = config.qk_n_bands
         self.qk_band_mode = config.qk_band_mode
+        self.attention_gate = attention_gate_for_variant(config.variant)
         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
         self.c_proj = (
             nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
             if use_output_projection
             else nn.Identity()
         )
+        if self.attention_gate == "sigmoid":
+            self.gate_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+            nn.init.zeros_(self.gate_proj.weight)
+            if self.gate_proj.bias is not None:
+                nn.init.zeros_(self.gate_proj.bias)
         if self.qk_score == "band":
             if self.qk_band_mode not in ("learned", "fixed"):
                 raise ValueError("qk_band_mode must be 'learned' or 'fixed'")
@@ -188,20 +225,33 @@ class CausalSelfAttention(nn.Module):
             y = att @ v
 
         y = y.transpose(1, 2).contiguous().view(batch, seq_len, channels)
-        return self.resid_dropout(self.c_proj(y))
+        y = self.c_proj(y)
+        if self.attention_gate == "sigmoid":
+            y = y * (2.0 * torch.sigmoid(self.gate_proj(x)))
+        return self.resid_dropout(y)
 
 
 class FeedForward(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias),
-            nn.GELU(),
-            nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias),
-            nn.Dropout(config.dropout),
-        )
+        self.kind = ffn_kind_for_variant(config.variant)
+        self.dropout = nn.Dropout(config.dropout)
+        if self.kind == "swiglu":
+            hidden_dim = swiglu_hidden_dim(config.n_embd)
+            self.w_gate = nn.Linear(config.n_embd, hidden_dim, bias=config.bias)
+            self.w_up = nn.Linear(config.n_embd, hidden_dim, bias=config.bias)
+            self.w_down = nn.Linear(hidden_dim, config.n_embd, bias=config.bias)
+        else:
+            self.net = nn.Sequential(
+                nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias),
+                nn.GELU(),
+                nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias),
+                nn.Dropout(config.dropout),
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.kind == "swiglu":
+            return self.dropout(self.w_down(F.silu(self.w_gate(x)) * self.w_up(x)))
         return self.net(x)
 
 
@@ -426,7 +476,7 @@ class Block(nn.Module):
     def forward(
         self, x: torch.Tensor, prev_x: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        if self.variant == "standard":
+        if self.variant in STANDARD_TRANSFORMER_VARIANTS:
             x = x + self.attn(self.n1(x))
             x = self.p1(x)
             x = x + self.ffn(self.n2(x))
@@ -963,6 +1013,11 @@ def train_one_variant(
     print(f"\n=== {variant} ===")
     print(f"parameters: {count_parameters(model):,}")
     print(f"optimizer: {args.optimizer}")
+    if variant in STANDARD_TRANSFORMER_VARIANTS:
+        print(
+            f"ffn: {ffn_kind_for_variant(variant)} | "
+            f"attention_gate: {attention_gate_for_variant(variant)}"
+        )
     qk_message = f"qk_score: {model_config.qk_score}"
     if model_config.qk_score == "band":
         qk_message += (
@@ -1086,6 +1141,8 @@ def train_one_variant(
             if variant == "standard_attnres_block"
             else ""
         ),
+        "ffn_kind": ffn_kind_for_variant(variant),
+        "attention_gate": attention_gate_for_variant(variant),
         "final_train_loss": final_losses["train"],
         "final_val_loss": final_losses["val"],
         "best_val_loss": best_val,
@@ -1129,6 +1186,8 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
         "qk_band_mode",
         "qk_band_scales",
         "attnres_n_blocks",
+        "ffn_kind",
+        "attention_gate",
         "final_train_loss",
         "final_val_loss",
         "best_val_loss",
