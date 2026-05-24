@@ -300,6 +300,7 @@ class FlaSequenceMixer(nn.Module):
                 "dropout": config.dropout,
                 "use_short_conv": False,
                 "use_output_gate": True,
+                "expand": 1,
                 "expand_k": 1.0,
                 "expand_v": 1.0,
             },
