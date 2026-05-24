@@ -77,6 +77,22 @@ Muon        0.8211     0.8355      68500
 delta      -0.0182    -0.0191
 ```
 
+## enwik8 Attention Residuals, Muon, optimizer-sweep budget
+
+- Folder:
+  [`enwik8_attention_residuals_standard_transformer_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k_earlystop10_lrdecay30k`](enwik8_attention_residuals_standard_transformer_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k_earlystop10_lrdecay30k/)
+- Main result: AttnRes reaches nearly the same loss scale as the same-budget
+  standard Transformer, but does not beat it on mean validation or test loss.
+  Block is the better AttnRes variant: test is tied with Full while throughput
+  is about 1.58x higher.
+
+```text
+variant                  best val   test loss   tok/s
+standard                 0.8211     0.8355      1.14M
+standard_attnres_block   0.8212     0.8375      257k
+standard_attnres_full    0.8227     0.8374      163k
+```
+
 ## enwik8 loop Transformer sweep, Muon, 8L 512D
 
 - Folder:

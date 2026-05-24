@@ -1,0 +1,4 @@
+variant,n,parameters_mean,parameters_std,best_val_loss_mean,best_val_loss_std,test_loss_mean,test_loss_std,final_val_loss_mean,final_val_loss_std,best_iter_mean,best_iter_std,elapsed_sec_mean,elapsed_sec_std,tokens_per_sec_mean,tokens_per_sec_std
+standard,2,25587200,0,0.8211,0.0018,0.8355,0.0053,0.8219,0.0021,68500,13435,9055.4998,1580.7848,1135000,7071
+standard_attnres_block,2,25604608,0,0.8212,0.0027,0.8375,0.0041,0.8225,0.0028,70500,10607,41112,4448,256500,707
+standard_attnres_full,2,25604608,0,0.8227,0.0036,0.8374,0.0063,0.8236,0.0043,60500,24749,56562,19852,163000,0
