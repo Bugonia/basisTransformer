@@ -16,7 +16,7 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 
 
 DEFAULT_BASE_RUN = (
-    "enwik8_standard_components_muon_8l_512d_ctx512_bs256_lr2e3_"
+    "enwik8_standard_components_sdpa_g1_muon_8l_512d_ctx512_bs256_lr2e3_"
     "test005_100k_earlystop10_lrdecay30k"
 )
 DEFAULT_STANDARD_BASE_RUN = (
@@ -167,7 +167,7 @@ def infer_ffn_kind(variant: str, row: Dict[str, str]) -> str:
 def infer_attention_gate(variant: str, row: Dict[str, str]) -> str:
     if row.get("attention_gate"):
         return row["attention_gate"]
-    return "sigmoid" if "gated_attn" in variant else "none"
+    return "sdpa_elementwise_sigmoid_g1" if "gated_attn" in variant else "none"
 
 
 def load_rows(patterns: Sequence[str]) -> List[Dict[str, str]]:

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-BASE_RUN="${BASE_RUN:-enwik8_standard_components_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k_earlystop10_lrdecay30k}"
+BASE_RUN="${BASE_RUN:-enwik8_standard_components_sdpa_g1_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k_earlystop10_lrdecay30k}"
 STANDARD_BASE_RUN="${STANDARD_BASE_RUN:-enwik8_optimizer_sweep_standard_pre_layernorm_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k}"
 PYTHON_BIN="${PYTHON_BIN:-.venv_cu128/bin/python}"
 TRAIN_SCRIPT="${TRAIN_SCRIPT:-train_block_residuals.py}"

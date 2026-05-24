@@ -4,8 +4,7 @@ This experiment tests local component changes on top of the standard
 pre-LayerNorm Transformer:
 
 - `standard_swiglu`: replace the GELU FFN with parameter-matched SwiGLU.
-- `standard_gated_attn`: multiply the attention branch output by a learned
-  input-dependent sigmoid gate.
+- `standard_gated_attn`: add the paper's SDPA elementwise G1 gate.
 - `standard_swiglu_gated_attn`: combine both changes.
 
 The standard baseline is the Muon run from the optimizer sweep:
@@ -33,14 +32,18 @@ elementwise product -> Linear(round(8d/3), d) -> Dropout
 For `d=512`, the SwiGLU hidden width is `1365`, keeping the FFN parameter count
 very close to the original `4d=2048` GELU FFN.
 
-Gated attention:
+Gated attention follows the paper's default SDPA Elementwise G1 setting:
 
 ```text
-AttentionOutput(x) * (2 * sigmoid(W_g x))
+Y = SDPA(Q, K, V)                         # shape: batch x heads x time x head_dim
+G = sigmoid(W_g LN(x))                    # shape after view: batch x heads x time x head_dim
+AttentionOutput(x) = W_o(concat(Y * G))
 ```
 
-`W_g` is zero-initialized, so the gate starts as exactly 1 and the attention
-branch is initially identical to the standard Transformer branch.
+The gate is head-specific, multiplicative, elementwise, query-dependent, and
+applied before head concatenation and the final output projection. It is not
+the dense-output G5 gate, and it does not use the old `2 * sigmoid` identity
+initialization trick.
 
 ## Run
 
@@ -61,5 +64,5 @@ The default budget matches the Muon optimizer sweep:
 Outputs are written to:
 
 ```text
-results/enwik8_standard_components_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k_earlystop10_lrdecay30k/
+results/enwik8_standard_components_sdpa_g1_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k_earlystop10_lrdecay30k/
 ```

@@ -82,7 +82,7 @@ def ffn_kind_for_variant(variant: str) -> str:
 
 
 def attention_gate_for_variant(variant: str) -> str:
-    return "sigmoid" if variant in GATED_ATTN_VARIANTS else "none"
+    return "sdpa_elementwise_sigmoid_g1" if variant in GATED_ATTN_VARIANTS else "none"
 
 
 def swiglu_hidden_dim(n_embd: int) -> int:
@@ -129,11 +129,8 @@ class CausalSelfAttention(nn.Module):
             if use_output_projection
             else nn.Identity()
         )
-        if self.attention_gate == "sigmoid":
+        if self.attention_gate == "sdpa_elementwise_sigmoid_g1":
             self.gate_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
-            nn.init.zeros_(self.gate_proj.weight)
-            if self.gate_proj.bias is not None:
-                nn.init.zeros_(self.gate_proj.bias)
         if self.qk_score == "band":
             if self.qk_band_mode not in ("learned", "fixed"):
                 raise ValueError("qk_band_mode must be 'learned' or 'fixed'")
@@ -224,10 +221,13 @@ class CausalSelfAttention(nn.Module):
             att = self.attn_dropout(att)
             y = att @ v
 
+        if self.attention_gate == "sdpa_elementwise_sigmoid_g1":
+            gate = torch.sigmoid(self.gate_proj(x))
+            gate = gate.view(batch, seq_len, self.n_head, self.head_dim).transpose(1, 2)
+            y = y * gate
+
         y = y.transpose(1, 2).contiguous().view(batch, seq_len, channels)
         y = self.c_proj(y)
-        if self.attention_gate == "sigmoid":
-            y = y * (2.0 * torch.sigmoid(self.gate_proj(x)))
         return self.resid_dropout(y)
 
 
