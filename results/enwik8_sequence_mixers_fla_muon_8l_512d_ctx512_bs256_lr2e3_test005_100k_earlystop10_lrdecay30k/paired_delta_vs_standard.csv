@@ -1,0 +1,7 @@
+seed,variant,best_val_loss_delta_vs_standard,test_loss_delta_vs_standard,tokens_per_sec_delta_vs_standard
+1,standard_linear_attn,0.0649,0.0592,-344000
+1,standard_gla,0.0337,0.0275,-499000
+1,standard_retnet,0.0550,0.0490,-249000
+2,standard_linear_attn,0.0673,0.0603,-334000
+2,standard_gla,0.0426,0.0340,-486000
+2,standard_retnet,0.0568,0.0466,-229000

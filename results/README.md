@@ -111,6 +111,25 @@ standard_gated_attn           0.8165     0.8288      34500       984k
 standard_swiglu_gated_attn    0.8190     0.8326      30000       542k
 ```
 
+## enwik8 linear attention and SSM mixers, Muon, optimizer-sweep budget
+
+- Folder:
+  [`enwik8_sequence_mixers_fla_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k_earlystop10_lrdecay30k`](enwik8_sequence_mixers_fla_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k_earlystop10_lrdecay30k/)
+- Main result: under the same enwik8 8L/512D ctx512 budget, the completed
+  FLA mixer variants do not beat the standard softmax-attention Transformer on
+  validation loss, test loss, or throughput. Among the completed FLA variants,
+  GLA has the lowest mean test loss. Mamba2 was attempted but excluded because
+  the fast-path dependencies were unavailable and the fallback implementation
+  OOMed at batch256/context512.
+
+```text
+variant                best val   test loss   best iter   tok/s
+standard               0.8211     0.8355      68500       1.14M
+standard_gla           0.8592     0.8662      29500       644k
+standard_retnet        0.8769     0.8833      28000       897k
+standard_linear_attn   0.8871     0.8952      59500       797k
+```
+
 ## enwik8 loop Transformer sweep, Muon, 8L 512D
 
 - Folder:

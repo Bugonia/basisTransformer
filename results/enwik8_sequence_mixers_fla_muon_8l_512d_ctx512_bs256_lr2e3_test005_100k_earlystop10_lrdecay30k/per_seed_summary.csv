@@ -1,0 +1,9 @@
+seed,variant,parameters,sequence_mixer,best_val_loss,test_loss,best_iter,tokens_per_sec
+1,standard,25587200,softmax_attention,0.8198,0.8317,59000,1140000
+1,standard_linear_attn,25704448,fla_linear_attention,0.8847,0.8909,63000,795000
+1,standard_gla,27803648,fla_gated_linear_attention,0.8535,0.8592,30000,641000
+1,standard_retnet,27668480,fla_multiscale_retention,0.8748,0.8807,27000,890000
+2,standard,25587200,softmax_attention,0.8223,0.8392,78000,1130000
+2,standard_linear_attn,25704448,fla_linear_attention,0.8896,0.8995,56000,799000
+2,standard_gla,27803648,fla_gated_linear_attention,0.8650,0.8732,29000,648000
+2,standard_retnet,27668480,fla_multiscale_retention,0.8791,0.8858,29000,905000
