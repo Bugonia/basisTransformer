@@ -602,22 +602,22 @@ class Block(nn.Module):
         self.pre_norm = config.norm in ("pre", "both")
         self.post_norm = config.norm in ("post", "both")
         self.ln1_token_scale = (
-            nn.Parameter(torch.ones(config.vocab_size))
+            nn.Parameter(torch.ones(config.vocab_size, config.n_embd))
             if config.norm_scale == "token" and self.pre_norm
             else None
         )
         self.ln2_token_scale = (
-            nn.Parameter(torch.ones(config.vocab_size))
+            nn.Parameter(torch.ones(config.vocab_size, config.n_embd))
             if config.norm_scale == "token" and self.pre_norm
             else None
         )
         self.post_ln1_token_scale = (
-            nn.Parameter(torch.ones(config.vocab_size))
+            nn.Parameter(torch.ones(config.vocab_size, config.n_embd))
             if config.norm_scale == "token" and self.post_norm
             else None
         )
         self.post_ln2_token_scale = (
-            nn.Parameter(torch.ones(config.vocab_size))
+            nn.Parameter(torch.ones(config.vocab_size, config.n_embd))
             if config.norm_scale == "token" and self.post_norm
             else None
         )
@@ -659,7 +659,7 @@ class Block(nn.Module):
             return None
         if token_ids is None:
             raise ValueError("token_ids are required when norm_scale='token'")
-        return token_scale[token_ids].unsqueeze(-1).to(dtype=x.dtype)
+        return token_scale[token_ids].to(dtype=x.dtype)
 
     def _apply_norm(
         self,
@@ -926,17 +926,22 @@ class TinyGPT(nn.Module):
         use_fused = fused_available and device_type == "cuda"
         extra_args = {"fused": True} if use_fused else {}
         no_decay_names = {"attnres.query"}
+        norm_scale_names = {
+            name for name in param_dict if name.endswith("_token_scale")
+        }
 
         if optimizer_name == "adamw":
             decay_params = [
                 p
                 for name, p in param_dict.items()
-                if p.dim() >= 2 and name not in no_decay_names
+                if p.dim() >= 2
+                and name not in no_decay_names
+                and name not in norm_scale_names
             ]
             nodecay_params = [
                 p
                 for name, p in param_dict.items()
-                if p.dim() < 2 or name in no_decay_names
+                if p.dim() < 2 or name in no_decay_names or name in norm_scale_names
             ]
             optim_groups = [
                 {"params": decay_params, "weight_decay": weight_decay},
@@ -956,9 +961,19 @@ class TinyGPT(nn.Module):
                     "transformer.wpe.weight",
                     "lm_head.weight",
                 }
-                if param.dim() >= 2 and not is_embedding and name not in no_decay_names:
+                is_norm_scale = name in norm_scale_names
+                if (
+                    param.dim() >= 2
+                    and not is_embedding
+                    and name not in no_decay_names
+                    and not is_norm_scale
+                ):
                     muon_params.append(param)
-                elif param.dim() >= 2 and name not in no_decay_names:
+                elif (
+                    param.dim() >= 2
+                    and name not in no_decay_names
+                    and not is_norm_scale
+                ):
                     adamw_decay_params.append(param)
                 else:
                     adamw_nodecay_params.append(param)
@@ -1503,7 +1518,7 @@ def parse_args() -> argparse.Namespace:
         help="Gamma parameterization for normalization layers. 'learned' is the "
         "standard per-channel trainable gamma, 'fixed_one' removes gamma and "
         "uses scale 1, 'scalar' trains one gamma scalar per norm layer, and "
-        "'token' trains one gamma per vocab token per Transformer block.",
+        "'token' trains per-token, per-channel gamma tables in each block norm.",
     )
     parser.add_argument(
         "--dataset", choices=("tiny_shakespeare", "synthetic"), default="tiny_shakespeare"
