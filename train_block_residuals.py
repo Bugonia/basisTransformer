@@ -601,9 +601,24 @@ class Block(nn.Module):
         self.norm_scale = config.norm_scale
         self.pre_norm = config.norm in ("pre", "both")
         self.post_norm = config.norm in ("post", "both")
-        self.token_norm_scale = (
+        self.ln1_token_scale = (
             nn.Parameter(torch.ones(config.vocab_size))
-            if config.norm_scale == "token" and config.norm != "none"
+            if config.norm_scale == "token" and self.pre_norm
+            else None
+        )
+        self.ln2_token_scale = (
+            nn.Parameter(torch.ones(config.vocab_size))
+            if config.norm_scale == "token" and self.pre_norm
+            else None
+        )
+        self.post_ln1_token_scale = (
+            nn.Parameter(torch.ones(config.vocab_size))
+            if config.norm_scale == "token" and self.post_norm
+            else None
+        )
+        self.post_ln2_token_scale = (
+            nn.Parameter(torch.ones(config.vocab_size))
+            if config.norm_scale == "token" and self.post_norm
             else None
         )
         self.ln1 = (
@@ -635,43 +650,51 @@ class Block(nn.Module):
         self.ffn = FeedForward(config)
 
     def _token_scale(
-        self, token_ids: Optional[torch.Tensor], x: torch.Tensor
+        self,
+        token_scale: Optional[torch.Tensor],
+        token_ids: Optional[torch.Tensor],
+        x: torch.Tensor,
     ) -> Optional[torch.Tensor]:
-        if self.token_norm_scale is None:
+        if token_scale is None:
             return None
         if token_ids is None:
             raise ValueError("token_ids are required when norm_scale='token'")
-        return self.token_norm_scale[token_ids].unsqueeze(-1).to(dtype=x.dtype)
+        return token_scale[token_ids].unsqueeze(-1).to(dtype=x.dtype)
 
     def _apply_norm(
         self,
         norm: nn.Module,
         x: torch.Tensor,
         token_ids: Optional[torch.Tensor],
+        token_scale: Optional[torch.Tensor],
     ) -> torch.Tensor:
         if isinstance(norm, nn.Identity):
             return norm(x)
-        return norm(x, self._token_scale(token_ids, x))
+        return norm(x, self._token_scale(token_scale, token_ids, x))
 
     def n1(
         self, x: torch.Tensor, token_ids: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        return self._apply_norm(self.ln1, x, token_ids)
+        return self._apply_norm(self.ln1, x, token_ids, self.ln1_token_scale)
 
     def n2(
         self, x: torch.Tensor, token_ids: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        return self._apply_norm(self.ln2, x, token_ids)
+        return self._apply_norm(self.ln2, x, token_ids, self.ln2_token_scale)
 
     def p1(
         self, x: torch.Tensor, token_ids: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        return self._apply_norm(self.post_ln1, x, token_ids)
+        return self._apply_norm(
+            self.post_ln1, x, token_ids, self.post_ln1_token_scale
+        )
 
     def p2(
         self, x: torch.Tensor, token_ids: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        return self._apply_norm(self.post_ln2, x, token_ids)
+        return self._apply_norm(
+            self.post_ln2, x, token_ids, self.post_ln2_token_scale
+        )
 
     def forward(
         self,
