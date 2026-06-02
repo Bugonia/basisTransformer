@@ -4,9 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
+CONFIG_FILE="${CONFIG_FILE:-}"
+if [[ -n "$CONFIG_FILE" ]]; then
+  source "$CONFIG_FILE"
+fi
+
 PYTHON_BIN="${PYTHON_BIN:-.venv_cu128/bin/python}"
 TRAIN_SCRIPT="${TRAIN_SCRIPT:-train_block_residuals.py}"
 DATA_FILE="${DATA_FILE:-data/enwik8.txt}"
+ENCODING="${ENCODING:-latin-1}"
 
 VARIANT="${VARIANT:-standard}"
 NORM="${NORM:-pre}"
@@ -142,7 +148,7 @@ for seed in "${SEED_ARRAY[@]}"; do
     echo "Launching ${run_name} on GPU ${gpu}."
     PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES="$gpu" "$PYTHON_BIN" "$TRAIN_SCRIPT" \
       --data-file "$DATA_FILE" \
-      --encoding latin-1 \
+      --encoding "$ENCODING" \
       --variant "$VARIANT" \
       --norm "$NORM" \
       --norm-kind "$NORM_KIND" \

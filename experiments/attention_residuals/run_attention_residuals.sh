@@ -4,11 +4,17 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
+CONFIG_FILE="${CONFIG_FILE:-}"
+if [[ -n "$CONFIG_FILE" ]]; then
+  source "$CONFIG_FILE"
+fi
+
 BASE_RUN="${BASE_RUN:-enwik8_attention_residuals_standard_transformer_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k_earlystop10_lrdecay30k}"
 STANDARD_BASE_RUN="${STANDARD_BASE_RUN:-enwik8_optimizer_sweep_standard_pre_layernorm_8l_512d_ctx512_bs256_test005_100k_earlystop10_lrdecay30k}"
 PYTHON_BIN="${PYTHON_BIN:-.venv_cu128/bin/python}"
 TRAIN_SCRIPT="${TRAIN_SCRIPT:-train_block_residuals.py}"
 DATA_FILE="${DATA_FILE:-data/enwik8.txt}"
+ENCODING="${ENCODING:-latin-1}"
 
 VARIANTS_STRING="${VARIANTS:-standard_attnres_block standard_attnres_full}"
 SEEDS_STRING="${SEEDS:-1 2}"
@@ -119,7 +125,7 @@ for seed in "${SEED_ARRAY[@]}"; do
     echo "Launching ${run_name} on GPU ${gpu}."
     PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES="$gpu" "$PYTHON_BIN" "$TRAIN_SCRIPT" \
       --data-file "$DATA_FILE" \
-      --encoding latin-1 \
+      --encoding "$ENCODING" \
       --variant "$variant" \
       --norm "$NORM" \
       --norm-kind "$NORM_KIND" \
