@@ -127,6 +127,7 @@ class ModelConfig:
     variant: str = "standard"
     norm: str = "pre"
     norm_kind: str = "layernorm"
+    norm_scale: str = "learned"
     n_unique_layers: Optional[int] = None
     qk_score: str = "dot"
     qk_n_bands: int = 4
@@ -375,26 +376,69 @@ class FeedForward(nn.Module):
 
 
 class LayerNorm(nn.Module):
-    """LayerNorm with an optional bias parameter, compatible with older PyTorch."""
+    """LayerNorm with configurable gamma shape."""
 
-    def __init__(self, ndim: int, bias: bool):
+    def __init__(self, ndim: int, bias: bool, scale: str = "learned"):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones(ndim))
+        if scale not in ("learned", "fixed_one", "scalar", "token"):
+            raise ValueError(
+                "scale must be 'learned', 'fixed_one', 'scalar', or 'token'"
+            )
+        self.normalized_shape = (ndim,)
+        self.scale = scale
+        if scale == "learned":
+            self.weight = nn.Parameter(torch.ones(ndim))
+        elif scale == "scalar":
+            self.weight = nn.Parameter(torch.ones(()))
+        else:
+            self.register_parameter("weight", None)
         self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.layer_norm(x, self.weight.shape, self.weight, self.bias, 1e-5)
+    def forward(
+        self, x: torch.Tensor, token_scale: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        if self.scale == "learned":
+            return F.layer_norm(x, self.normalized_shape, self.weight, self.bias, 1e-5)
+        y = F.layer_norm(x, self.normalized_shape, None, None, 1e-5)
+        if self.scale == "token":
+            if token_scale is None:
+                raise ValueError("token_scale is required when norm_scale='token'")
+            y = y * token_scale
+        elif self.weight is not None:
+            y = y * self.weight
+        if self.bias is not None:
+            y = y + self.bias
+        return y
 
 
 class RMSNorm(nn.Module):
-    """RMSNorm without mean centering."""
+    """RMSNorm without mean centering, with configurable gamma shape."""
 
-    def __init__(self, ndim: int):
+    def __init__(self, ndim: int, scale: str = "learned"):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones(ndim))
+        if scale not in ("learned", "fixed_one", "scalar", "token"):
+            raise ValueError(
+                "scale must be 'learned', 'fixed_one', 'scalar', or 'token'"
+            )
+        self.scale = scale
+        if scale == "learned":
+            self.weight = nn.Parameter(torch.ones(ndim))
+        elif scale == "scalar":
+            self.weight = nn.Parameter(torch.ones(()))
+        else:
+            self.register_parameter("weight", None)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.weight * x * torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + 1e-5)
+    def forward(
+        self, x: torch.Tensor, token_scale: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        y = x * torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + 1e-5)
+        if self.scale == "token":
+            if token_scale is None:
+                raise ValueError("token_scale is required when norm_scale='token'")
+            y = y * token_scale
+        elif self.weight is not None:
+            y = y * self.weight
+        return y
 
 
 class DepthAttentionMixer(nn.Module):
@@ -424,11 +468,11 @@ class DepthAttentionMixer(nn.Module):
         return mixed
 
 
-def make_norm(ndim: int, bias: bool, norm_kind: str) -> nn.Module:
+def make_norm(ndim: int, bias: bool, norm_kind: str, norm_scale: str) -> nn.Module:
     if norm_kind == "layernorm":
-        return LayerNorm(ndim, bias=bias)
+        return LayerNorm(ndim, bias=bias, scale=norm_scale)
     if norm_kind == "rmsnorm":
-        return RMSNorm(ndim)
+        return RMSNorm(ndim, scale=norm_scale)
     raise ValueError(f"Unknown norm_kind {norm_kind!r}")
 
 
@@ -554,25 +598,31 @@ class Block(nn.Module):
         if config.norm not in ("pre", "post", "both", "none"):
             raise ValueError("norm must be 'pre', 'post', 'both', or 'none'")
         self.variant = config.variant
+        self.norm_scale = config.norm_scale
         self.pre_norm = config.norm in ("pre", "both")
         self.post_norm = config.norm in ("post", "both")
+        self.token_norm_scale = (
+            nn.Parameter(torch.ones(config.vocab_size))
+            if config.norm_scale == "token" and config.norm != "none"
+            else None
+        )
         self.ln1 = (
-            make_norm(config.n_embd, config.bias, config.norm_kind)
+            make_norm(config.n_embd, config.bias, config.norm_kind, config.norm_scale)
             if self.pre_norm
             else nn.Identity()
         )
         self.ln2 = (
-            make_norm(config.n_embd, config.bias, config.norm_kind)
+            make_norm(config.n_embd, config.bias, config.norm_kind, config.norm_scale)
             if self.pre_norm
             else nn.Identity()
         )
         self.post_ln1 = (
-            make_norm(config.n_embd, config.bias, config.norm_kind)
+            make_norm(config.n_embd, config.bias, config.norm_kind, config.norm_scale)
             if self.post_norm
             else nn.Identity()
         )
         self.post_ln2 = (
-            make_norm(config.n_embd, config.bias, config.norm_kind)
+            make_norm(config.n_embd, config.bias, config.norm_kind, config.norm_scale)
             if self.post_norm
             else nn.Identity()
         )
@@ -584,71 +634,108 @@ class Block(nn.Module):
         )
         self.ffn = FeedForward(config)
 
-    def n1(self, x: torch.Tensor) -> torch.Tensor:
-        return self.ln1(x)
+    def _token_scale(
+        self, token_ids: Optional[torch.Tensor], x: torch.Tensor
+    ) -> Optional[torch.Tensor]:
+        if self.token_norm_scale is None:
+            return None
+        if token_ids is None:
+            raise ValueError("token_ids are required when norm_scale='token'")
+        return self.token_norm_scale[token_ids].unsqueeze(-1).to(dtype=x.dtype)
 
-    def n2(self, x: torch.Tensor) -> torch.Tensor:
-        return self.ln2(x)
+    def _apply_norm(
+        self,
+        norm: nn.Module,
+        x: torch.Tensor,
+        token_ids: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        if isinstance(norm, nn.Identity):
+            return norm(x)
+        return norm(x, self._token_scale(token_ids, x))
 
-    def p1(self, x: torch.Tensor) -> torch.Tensor:
-        return self.post_ln1(x)
+    def n1(
+        self, x: torch.Tensor, token_ids: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        return self._apply_norm(self.ln1, x, token_ids)
 
-    def p2(self, x: torch.Tensor) -> torch.Tensor:
-        return self.post_ln2(x)
+    def n2(
+        self, x: torch.Tensor, token_ids: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        return self._apply_norm(self.ln2, x, token_ids)
+
+    def p1(
+        self, x: torch.Tensor, token_ids: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        return self._apply_norm(self.post_ln1, x, token_ids)
+
+    def p2(
+        self, x: torch.Tensor, token_ids: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        return self._apply_norm(self.post_ln2, x, token_ids)
 
     def forward(
-        self, x: torch.Tensor, prev_x: Optional[torch.Tensor] = None
+        self,
+        x: torch.Tensor,
+        prev_x: Optional[torch.Tensor] = None,
+        token_ids: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if self.variant in STANDARD_TRANSFORMER_VARIANTS:
-            x = x + self.attn(self.n1(x))
-            x = self.p1(x)
-            x = x + self.ffn(self.n2(x))
-            x = self.p2(x)
+            x = x + self.attn(self.n1(x, token_ids))
+            x = self.p1(x, token_ids)
+            x = x + self.ffn(self.n2(x, token_ids))
+            x = self.p2(x, token_ids)
             return x
 
         if self.variant == "standard_fa":
-            x = x + self.ffn(self.n1(x))
-            x = self.p1(x)
-            x = x + self.attn(self.n2(x))
-            x = self.p2(x)
+            x = x + self.ffn(self.n1(x, token_ids))
+            x = self.p1(x, token_ids)
+            x = x + self.attn(self.n2(x, token_ids))
+            x = self.p2(x, token_ids)
             return x
 
         if self.variant == "block_af":
             # h_next = h + FFN(Attn(h)); with optional Pre-LN around each submodule.
-            a = self.attn(self.n1(x))
-            return self.p2(x + self.ffn(self.n2(a)))
+            a = self.attn(self.n1(x, token_ids))
+            return self.p2(x + self.ffn(self.n2(a, token_ids)), token_ids)
 
         if self.variant == "block_af_no_mid_ln":
             # h_next = h + FFN(Attn(LN(h))). No LN/dropout-removable nonlinear op
             # is inserted between the attention output projection and FFN.
-            a = self.attn(self.n1(x))
-            return self.p2(x + self.ffn(a))
+            a = self.attn(self.n1(x, token_ids))
+            return self.p2(x + self.ffn(a), token_ids)
 
         if self.variant == "block_af_no_mid_ln_no_wo":
             # Same as block_af_no_mid_ln, but attention omits W_O/c_proj.
             # With dropout=0, W_O is algebraically absorbable into FFN W_1.
-            a = self.attn(self.n1(x))
-            return self.p2(x + self.ffn(a))
+            a = self.attn(self.n1(x, token_ids))
+            return self.p2(x + self.ffn(a), token_ids)
 
         if self.variant == "block_fa":
             # h_next = h + Attn(FFN(h)); with optional Pre-LN around each submodule.
-            f = self.ffn(self.n1(x))
-            return self.p2(x + self.attn(self.n2(f)))
+            f = self.ffn(self.n1(x, token_ids))
+            return self.p2(x + self.attn(self.n2(f, token_ids)), token_ids)
 
         if self.variant == "block_af_carry":
             prev = torch.zeros_like(x) if prev_x is None else prev_x
-            a = self.attn(self.n1(x))
-            a_prev = self.attn(self.n1(prev))
-            return self.p2(x + self.ffn(self.n2(a + a_prev)))
+            a = self.attn(self.n1(x, token_ids))
+            a_prev = self.attn(self.n1(prev, token_ids))
+            return self.p2(
+                x + self.ffn(self.n2(a + a_prev, token_ids)), token_ids
+            )
 
         if self.variant == "block_fa_carry":
             prev = torch.zeros_like(x) if prev_x is None else prev_x
-            f = self.ffn(self.n1(x))
-            f_prev = self.ffn(self.n1(prev))
-            return self.p2(x + self.attn(self.n2(f + f_prev)))
+            f = self.ffn(self.n1(x, token_ids))
+            f_prev = self.ffn(self.n1(prev, token_ids))
+            return self.p2(
+                x + self.attn(self.n2(f + f_prev, token_ids)), token_ids
+            )
 
         if self.variant == "parallel":
-            return self.p2(x + self.attn(self.n1(x)) + self.ffn(self.n2(x)))
+            return self.p2(
+                x + self.attn(self.n1(x, token_ids)) + self.ffn(self.n2(x, token_ids)),
+                token_ids,
+            )
 
         raise AssertionError("unreachable")
 
@@ -663,6 +750,9 @@ class TinyGPT(nn.Module):
         if n_unique_layers > config.n_layer:
             raise ValueError("n_unique_layers cannot exceed n_layer")
         self.n_unique_layers = n_unique_layers
+        final_norm_scale = (
+            "fixed_one" if config.norm_scale == "token" else config.norm_scale
+        )
         self.transformer = nn.ModuleDict(
             dict(
                 wte=nn.Embedding(config.vocab_size, config.n_embd),
@@ -671,7 +761,12 @@ class TinyGPT(nn.Module):
                 h=nn.ModuleList(
                     [Block(config, layer_idx=i) for i in range(n_unique_layers)]
                 ),
-                ln_f=make_norm(config.n_embd, config.bias, config.norm_kind)
+                ln_f=make_norm(
+                    config.n_embd,
+                    config.bias,
+                    config.norm_kind,
+                    final_norm_scale,
+                )
                 if config.norm in ("pre", "both")
                 else nn.Identity(),
             )
@@ -704,14 +799,14 @@ class TinyGPT(nn.Module):
         pos_emb = self.transformer.wpe(pos)
         x = self.transformer.drop(tok_emb + pos_emb)
         if self.config.variant == "standard_attnres_full":
-            x = self.forward_attnres_full(x)
+            x = self.forward_attnres_full(x, idx)
         elif self.config.variant == "standard_attnres_block":
-            x = self.forward_attnres_block(x)
+            x = self.forward_attnres_block(x, idx)
         else:
             prev_x = None
             for layer_idx in range(self.config.n_layer):
                 block = self.transformer.h[layer_idx % self.n_unique_layers]
-                next_x = block(x, prev_x)
+                next_x = block(x, prev_x, idx)
                 prev_x, x = x, next_x
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x)
@@ -723,7 +818,9 @@ class TinyGPT(nn.Module):
             )
         return logits, loss
 
-    def forward_attnres_full(self, x: torch.Tensor) -> torch.Tensor:
+    def forward_attnres_full(
+        self, x: torch.Tensor, token_ids: torch.Tensor
+    ) -> torch.Tensor:
         assert self.attnres is not None
         sources = [x]
         step_idx = 0
@@ -731,16 +828,18 @@ class TinyGPT(nn.Module):
             block = self.transformer.h[layer_idx % self.n_unique_layers]
 
             h = self.attnres(step_idx, sources)
-            sources.append(block.attn(block.n1(h)))
+            sources.append(block.attn(block.n1(h, token_ids)))
             step_idx += 1
 
             h = self.attnres(step_idx, sources)
-            sources.append(block.ffn(block.n2(h)))
+            sources.append(block.ffn(block.n2(h, token_ids)))
             step_idx += 1
 
         return self.attnres(step_idx, sources)
 
-    def forward_attnres_block(self, x: torch.Tensor) -> torch.Tensor:
+    def forward_attnres_block(
+        self, x: torch.Tensor, token_ids: torch.Tensor
+    ) -> torch.Tensor:
         assert self.attnres is not None
         total_steps = 2 * self.config.n_layer
         target_blocks = max(1, min(self.config.attnres_n_blocks, total_steps))
@@ -759,7 +858,7 @@ class TinyGPT(nn.Module):
                 else completed_blocks + [partial_block]
             )
             h = self.attnres(step_idx, sources)
-            attn_out = block.attn(block.n1(h))
+            attn_out = block.attn(block.n1(h, token_ids))
             partial_block = (
                 attn_out if partial_block is None else partial_block + attn_out
             )
@@ -774,7 +873,7 @@ class TinyGPT(nn.Module):
                 else completed_blocks + [partial_block]
             )
             h = self.attnres(step_idx, sources)
-            ffn_out = block.ffn(block.n2(h))
+            ffn_out = block.ffn(block.n2(h, token_ids))
             partial_block = (
                 ffn_out if partial_block is None else partial_block + ffn_out
             )
@@ -1138,6 +1237,10 @@ def train_one_variant(
     print(f"\n=== {variant} ===")
     print(f"parameters: {count_parameters(model):,}")
     print(f"optimizer: {args.optimizer}")
+    print(
+        f"norm: {model_config.norm} | norm_kind: {model_config.norm_kind} | "
+        f"norm_scale: {model_config.norm_scale}"
+    )
     if variant in STANDARD_TRANSFORMER_VARIANTS:
         print(
             f"sequence_mixer: {sequence_mixer_for_variant(variant)} | "
@@ -1252,6 +1355,9 @@ def train_one_variant(
         "parameters": count_parameters(model),
         "n_layer": model_config.n_layer,
         "n_unique_layers": model_config.n_unique_layers or model_config.n_layer,
+        "norm": model_config.norm,
+        "norm_kind": model_config.norm_kind,
+        "norm_scale": model_config.norm_scale,
         "qk_score": model_config.qk_score,
         "qk_n_bands": model_config.qk_n_bands,
         "qk_band_mode": (
@@ -1308,6 +1414,9 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
         "parameters",
         "n_layer",
         "n_unique_layers",
+        "norm",
+        "norm_kind",
+        "norm_scale",
         "qk_score",
         "qk_n_bands",
         "qk_band_mode",
@@ -1363,6 +1472,15 @@ def parse_args() -> argparse.Namespace:
         default="layernorm",
         help="Normalization implementation. Existing standard results use layernorm; "
         "set rmsnorm explicitly for RMSNorm ablations.",
+    )
+    parser.add_argument(
+        "--norm-scale",
+        choices=("learned", "fixed_one", "scalar", "token"),
+        default="learned",
+        help="Gamma parameterization for normalization layers. 'learned' is the "
+        "standard per-channel trainable gamma, 'fixed_one' removes gamma and "
+        "uses scale 1, 'scalar' trains one gamma scalar per norm layer, and "
+        "'token' trains one gamma per vocab token per Transformer block.",
     )
     parser.add_argument(
         "--dataset", choices=("tiny_shakespeare", "synthetic"), default="tiny_shakespeare"
@@ -1561,6 +1679,7 @@ def main() -> None:
         bias=args.bias,
         norm=args.norm,
         norm_kind=args.norm_kind,
+        norm_scale=args.norm_scale,
         n_unique_layers=args.n_unique_layers,
         qk_score=args.qk_score,
         qk_n_bands=args.qk_n_bands,

@@ -28,6 +28,7 @@ split          train 99.0%, val 0.5%, test 0.5%
 variant        standard
 norm           pre-LayerNorm
 norm_kind      layernorm
+norm_scale     learned
 n_layer        8
 n_head         8
 n_embd         512
