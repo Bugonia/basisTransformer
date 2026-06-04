@@ -22,6 +22,35 @@ python3 -m venv .venv-llm-rl
 .venv-llm-rl/bin/python -m pip install -r experiments/llm_rl_alignment/requirements-llm-rl.txt
 ```
 
+If you are already inside a CUDA/Torch environment such as `.venv_cu128`, keep
+that PyTorch installation and install only the LLM alignment packages:
+
+```bash
+python -m pip install -r experiments/llm_rl_alignment/requirements-llm-rl-no-torch.txt
+```
+
+On restricted networks, use a reachable PyPI mirror:
+
+```bash
+python -m pip install \
+  -i https://pypi.tuna.tsinghua.edu.cn/simple \
+  --trusted-host pypi.tuna.tsinghua.edu.cn \
+  -r experiments/llm_rl_alignment/requirements-llm-rl-no-torch.txt
+```
+
+If the training node has no working PyPI access, build a wheelhouse on an
+online machine with the same Python version, copy it to the training node, and
+install from local files:
+
+```bash
+python -m pip download \
+  -r experiments/llm_rl_alignment/requirements-llm-rl-no-torch.txt \
+  -d wheelhouse_llm_rl
+
+python -m pip install --no-index --find-links wheelhouse_llm_rl \
+  -r experiments/llm_rl_alignment/requirements-llm-rl-no-torch.txt
+```
+
 Use the same base model for every method:
 
 ```bash
