@@ -118,6 +118,24 @@ Summarize exact-match and length shifts:
   "$OUT_ROOT/smoke_generations.jsonl"
 ```
 
+Run a larger automatic math evaluation after the adapters have been trained:
+
+```bash
+.venv-llm-rl/bin/python experiments/llm_rl_alignment/scripts/evaluate_math_benchmarks.py \
+  --model base="$BASE_MODEL" \
+  --model sft="$OUT_ROOT/sft" \
+  --model dpo="$OUT_ROOT/dpo" \
+  --model grpo="$OUT_ROOT/grpo" \
+  --output-dir "$OUT_ROOT/math_eval" \
+  --gsm8k-samples 200 \
+  --math500-samples 100
+```
+
+This writes `math_benchmark_generations.jsonl` and
+`math_benchmark_summary.csv` under the chosen output directory. The evaluator
+uses cached Hugging Face datasets, so it works on an offline training node after
+`openai/gsm8k` and `HuggingFaceH4/MATH-500` have been downloaded once.
+
 ## What To Measure
 
 Use multiple metrics, because RL often improves one axis while hurting another.
