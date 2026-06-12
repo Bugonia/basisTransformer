@@ -11,6 +11,10 @@ Default variants:
 - `standard_gla`: FLA `GatedLinearAttention`.
 - `standard_retnet`: FLA `MultiScaleRetention`.
 - `standard_mamba2`: FLA `Mamba2`.
+- `standard_hadamard_qkv`: local causal Hadamard mixer
+  \(o_i = q_i \odot \sum_{j \le i} k_j \odot v_j\).
+- `standard_hadamard_qv`: local causal Hadamard mixer
+  \(o_i = q_i \odot \sum_{j \le i} v_j\).
 
 The standard baseline is the Muon run from the optimizer sweep:
 
@@ -20,9 +24,10 @@ enwik8_optimizer_sweep_standard_pre_layernorm_8l_512d_ctx512_bs256_test005_100k_
 
 ## Dependency
 
-These variants require the optional `flash-linear-attention` package in the
+The FLA variants require the optional `flash-linear-attention` package in the
 training environment. The runner checks `import fla.layers` before launching
-jobs and exits early if the package is missing.
+FLA jobs and exits early if the package is missing. The local Hadamard variants
+do not require FLA.
 
 Example installation in the cluster venv:
 
@@ -35,6 +40,15 @@ pip install -U flash-linear-attention
 
 ```bash
 GPUS="0 1 2 3" experiments/sequence_mixers/run_sequence_mixers.sh
+```
+
+To test only the two local Hadamard mixers:
+
+```bash
+VARIANTS="standard_hadamard_qkv standard_hadamard_qv" \
+CHECK_FLA=0 \
+GPUS="0" \
+experiments/sequence_mixers/run_sequence_mixers.sh
 ```
 
 The default budget matches the Muon optimizer sweep:

@@ -30,6 +30,8 @@ VARIANT_ORDER = [
     "standard_gla",
     "standard_retnet",
     "standard_mamba2",
+    "standard_hadamard_qkv",
+    "standard_hadamard_qv",
 ]
 
 SEQUENCE_MIXER_BY_VARIANT = {
@@ -38,6 +40,8 @@ SEQUENCE_MIXER_BY_VARIANT = {
     "standard_gla": "fla_gated_linear_attention",
     "standard_retnet": "fla_multiscale_retention",
     "standard_mamba2": "fla_mamba2",
+    "standard_hadamard_qkv": "hadamard_causal_qkv",
+    "standard_hadamard_qv": "hadamard_causal_qv",
 }
 
 PER_SEED_COLUMNS = [

@@ -16,7 +16,7 @@ TRAIN_SCRIPT="${TRAIN_SCRIPT:-train_block_residuals.py}"
 DATA_FILE="${DATA_FILE:-data/enwik8.txt}"
 ENCODING="${ENCODING:-latin-1}"
 
-VARIANTS_STRING="${VARIANTS:-standard_linear_attn standard_gla standard_retnet standard_mamba2}"
+VARIANTS_STRING="${VARIANTS:-standard_linear_attn standard_gla standard_retnet standard_mamba2 standard_hadamard_qkv standard_hadamard_qv}"
 SEEDS_STRING="${SEEDS:-1 2}"
 read -r -a VARIANT_ARRAY <<< "$VARIANTS_STRING"
 read -r -a SEED_ARRAY <<< "$SEEDS_STRING"
@@ -49,14 +49,23 @@ DROPOUT="${DROPOUT:-0.1}"
 DTYPE="${DTYPE:-bfloat16}"
 COMPILE="${COMPILE:-0}"
 RESUME="${RESUME:-1}"
-CHECK_FLA="${CHECK_FLA:-1}"
+CHECK_FLA="${CHECK_FLA:-auto}"
 
 if [[ "$OPTIMIZER" != "adamw" && "$OPTIMIZER" != "muon" ]]; then
   echo "Unknown OPTIMIZER='${OPTIMIZER}'. Expected adamw or muon." >&2
   exit 1
 fi
 
-if [[ "$CHECK_FLA" == "1" || "$CHECK_FLA" == "true" ]]; then
+needs_fla=0
+for variant in "${VARIANT_ARRAY[@]}"; do
+  case "$variant" in
+    standard_linear_attn|standard_gla|standard_retnet|standard_mamba2)
+      needs_fla=1
+      ;;
+  esac
+done
+
+if [[ "$CHECK_FLA" == "1" || "$CHECK_FLA" == "true" || ( "$CHECK_FLA" == "auto" && "$needs_fla" == "1" ) ]]; then
   if ! "$PYTHON_BIN" - <<'PY'
 import torch
 if torch.cuda.is_available():
