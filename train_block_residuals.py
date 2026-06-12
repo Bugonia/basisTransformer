@@ -59,6 +59,10 @@ FLA_MIXER_VARIANTS = (
     "standard_retnet",
     "standard_mamba2",
 )
+HADAMARD_MIXER_VARIANTS = (
+    "standard_hadamard_qkv",
+    "standard_hadamard_qv",
+)
 STANDARD_TRANSFORMER_VARIANTS = (
     "standard",
     "standard_swiglu",
@@ -68,6 +72,8 @@ STANDARD_TRANSFORMER_VARIANTS = (
     "standard_gla",
     "standard_retnet",
     "standard_mamba2",
+    "standard_hadamard_qkv",
+    "standard_hadamard_qv",
 )
 VARIANTS = (
     "standard",
@@ -78,6 +84,8 @@ VARIANTS = (
     "standard_gla",
     "standard_retnet",
     "standard_mamba2",
+    "standard_hadamard_qkv",
+    "standard_hadamard_qv",
     "standard_fa",
     "standard_attnres_full",
     "standard_attnres_block",
@@ -108,6 +116,10 @@ def sequence_mixer_for_variant(variant: str) -> str:
         return "fla_multiscale_retention"
     if variant == "standard_mamba2":
         return "fla_mamba2"
+    if variant == "standard_hadamard_qkv":
+        return "hadamard_causal_qkv"
+    if variant == "standard_hadamard_qv":
+        return "hadamard_causal_qv"
     return "softmax_attention"
 
 
@@ -339,6 +351,44 @@ class FlaSequenceMixer(nn.Module):
         return self.resid_dropout(y)
 
 
+class HadamardCausalMixer(nn.Module):
+    """Causal diagonal linear mixer using prefix sums of elementwise products."""
+
+    def __init__(self, config: ModelConfig, use_output_projection: bool = True):
+        super().__init__()
+        if config.n_embd % config.n_head != 0:
+            raise ValueError("n_embd must be divisible by n_head")
+        if config.variant not in HADAMARD_MIXER_VARIANTS:
+            raise ValueError(f"Unsupported Hadamard mixer variant: {config.variant}")
+        self.variant = config.variant
+        self.n_head = config.n_head
+        self.head_dim = config.n_embd // config.n_head
+        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
+        self.c_proj = (
+            nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+            if use_output_projection
+            else nn.Identity()
+        )
+        self.resid_dropout = nn.Dropout(config.dropout)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batch, seq_len, channels = x.size()
+        q, k, v = self.c_attn(x).split(channels, dim=2)
+        q = q.view(batch, seq_len, self.n_head, self.head_dim).transpose(1, 2)
+        k = k.view(batch, seq_len, self.n_head, self.head_dim).transpose(1, 2)
+        v = v.view(batch, seq_len, self.n_head, self.head_dim).transpose(1, 2)
+
+        if self.variant == "standard_hadamard_qkv":
+            memory = (k * v).cumsum(dim=2)
+        else:
+            memory = v.cumsum(dim=2)
+        y = q * memory
+
+        y = y.transpose(1, 2).contiguous().view(batch, seq_len, channels)
+        y = self.c_proj(y)
+        return self.resid_dropout(y)
+
+
 def make_sequence_mixer(
     config: ModelConfig,
     layer_idx: int,
@@ -348,6 +398,10 @@ def make_sequence_mixer(
         if not use_output_projection:
             raise ValueError("FLA mixer variants require their own output projection")
         return FlaSequenceMixer(config, layer_idx=layer_idx)
+    if config.variant in HADAMARD_MIXER_VARIANTS:
+        return HadamardCausalMixer(
+            config, use_output_projection=use_output_projection
+        )
     return CausalSelfAttention(config, use_output_projection=use_output_projection)
 
 
