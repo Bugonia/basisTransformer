@@ -137,7 +137,9 @@ standard_linear_attn   0.8871     0.8952      59500       797k
 - Main result: the QKV Hadamard prefix mixer is much stronger than the QV-only
   ablation, showing that the key gate in
   `q_i * sum_{j <= i}(k_j * v_j)` is doing important sequence-mixing work.
-  QV-only is faster but loses about 0.11 test loss.
+  QV-only is faster but loses about 0.11 test loss. Hadamard QKV still trails
+  both the standard softmax baseline (0.8355 test) and FLA LinearAttention
+  (0.8952 test), consistent with diagonal KV memory being too restrictive.
 
 ```text
 variant                 best val   test loss   best iter   tok/s
