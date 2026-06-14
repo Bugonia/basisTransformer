@@ -1,0 +1,3 @@
+variant,n,parameters_mean,parameters_std,best_val_loss_mean,best_val_loss_std,test_loss_mean,test_loss_std,final_val_loss_mean,final_val_loss_std,best_iter_mean,best_iter_std,elapsed_sec_mean,elapsed_sec_std,tokens_per_sec_mean,tokens_per_sec_std
+standard_hadamard_qkv,2,25587200,0,0.9775,0.0018,0.9887,0.0044,0.9781,0.0011,97500,707,13896,27,944000,3500
+standard_hadamard_qv,2,25587200,0,1.0865,0.0037,1.1020,0.0050,1.0865,0.0037,100000,0,13284,11,986000,0

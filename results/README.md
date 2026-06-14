@@ -130,6 +130,21 @@ standard_retnet        0.8769     0.8833      28000       897k
 standard_linear_attn   0.8871     0.8952      59500       797k
 ```
 
+## enwik8 causal Hadamard mixers, Muon, 8L 512D
+
+- Folder:
+  [`enwik8_hadamard_mixers_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k`](enwik8_hadamard_mixers_muon_8l_512d_ctx512_bs256_lr2e3_test005_100k/)
+- Main result: the QKV Hadamard prefix mixer is much stronger than the QV-only
+  ablation, showing that the key gate in
+  `q_i * sum_{j <= i}(k_j * v_j)` is doing important sequence-mixing work.
+  QV-only is faster but loses about 0.11 test loss.
+
+```text
+variant                 best val   test loss   best iter   tok/s
+standard_hadamard_qkv   0.9775     0.9887      97500       944k
+standard_hadamard_qv    1.0865     1.1020      100000      986k
+```
+
 ## enwik8 loop Transformer sweep, Muon, 8L 512D
 
 - Folder:
