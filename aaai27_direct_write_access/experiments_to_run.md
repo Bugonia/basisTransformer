@@ -263,6 +263,44 @@ Message:
 > WikiText-103 or FineWeb-Edu checks that the direct-write-access trend is not
 > specific to one small character-level corpus.
 
+### E7: FFN Knowledge Basis vs. Coefficient Test
+
+Priority:
+
+- high-value follow-up; include only a small pilot in Paper 1 if attribution
+  infrastructure is already working.
+
+Question:
+
+- existing FFN-memory work suggests factual recall is mediated by FFN
+  key-value computations;
+- our framework asks whether factual knowledge is mainly carried by FFN
+  write-basis/value vectors, by key/coefficient activations, or by their
+  interaction.
+
+Pilot:
+
+- use a pretrained small model such as `EleutherAI/pythia-70m` or GPT-2;
+- collect factual prompts with known target tokens;
+- for each FFN neuron/direction, compute:
+
+```text
+coefficient * W_U(value_vector)[target_token]
+```
+
+- rank layer/neuron contributions to the target token.
+
+Application test:
+
+- if facts are concentrated in stable FFN value-basis supports, try freezing or
+  regularizing those supports during fine-tuning and measure factual retention.
+
+See:
+
+```text
+notes/ffn_knowledge_basis_vs_coefficients.md
+```
+
 ## Experiments Not for First Submission
 
 Defer:
@@ -271,6 +309,7 @@ Defer:
 - safety steering;
 - SAE alignment;
 - compression pruning.
+- full continual-learning benchmark.
 
 Reason:
 
