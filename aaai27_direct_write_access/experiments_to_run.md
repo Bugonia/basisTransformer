@@ -162,25 +162,49 @@ Minimum output:
 rank | layer | module | target-logit contribution | sign
 ```
 
-### E3: Causal Write Ablation
+### E3: Counterfactual Write Patching
 
 Priority:
 
 - important for top-conference credibility.
 
+Why not simple zeroing:
+
+- zeroing the largest positive write contribution can create an out-of-
+  distribution hidden state;
+- reviewers may reasonably object that any large deletion damages the model,
+  independent of whether the attribution is meaningful.
+
 Method:
 
-- rerun prompt while zeroing the largest positive write contribution;
-- compare target token logit before/after;
-- include random matched ablation control.
+- use paired clean/corrupt prompts, e.g. `The capital of France is` versus
+  `The capital of Germany is`;
+- capture Attention/FFN residual writes or FFN coefficients from both runs;
+- patch a real activation/write from the clean run into the corrupt run, or
+  vice versa, at a specified layer/module;
+- compare target-token logit movement against matched controls.
+
+Controls:
+
+- same layer and module, but patch a low-attribution write;
+- same norm and token position, but patch from an unrelated prompt;
+- full-layer residual patch as an upper bound;
+- no-intervention rerun as a stability check.
 
 Minimum output:
 
 ```text
-intervention                 target logit drop
-top positive write removed   large drop
-random same-norm write       smaller drop
+intervention                         target logit shift
+top attributed clean write patched   large shift toward clean target
+low-attribution matched patch        smaller shift
+unrelated same-module patch          smaller or nonspecific shift
 ```
+
+Interpretation:
+
+- this is not a proof that the hidden state remains perfectly on-distribution;
+- it is a less destructive causal sanity check than zeroing, because every
+  patched object is a real model-generated activation from a real prompt.
 
 ### E4: Optional Basis-Column Decomposition
 

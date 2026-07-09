@@ -54,7 +54,7 @@ Outcome:
 
 Tasks:
 
-- [ ] Finish causal write ablation table.
+- [ ] Finish counterfactual write-patching table.
 - [ ] Add Qwen2.5-0.5B inventory if feasible.
 - [ ] Write controlled experiment section.
 - [ ] Write related work.
@@ -90,4 +90,3 @@ Every day should produce one of:
 - a decision that removes scope.
 
 Avoid days that only produce vague reading notes.
-

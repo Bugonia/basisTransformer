@@ -107,7 +107,8 @@ Needed new evidence:
 - pretrained open-model basis inventory;
 - module-level logit attribution on at least Pythia-70M/GPT-2 and preferably
   Qwen2.5-0.5B;
-- causal write ablations on one pretrained model.
+- counterfactual write patching on one pretrained model, using clean/corrupt
+  prompt activations rather than zeroing hidden-state contributions.
 
 ## File Map
 

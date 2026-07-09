@@ -11,7 +11,8 @@
 - [ ] Main ablation table reports parameter counts and compute indicators.
 - [ ] Table 4: open-model basis inventory.
 - [ ] One pretrained-model logit attribution case.
-- [ ] One causal ablation showing attribution is not merely descriptive.
+- [ ] One counterfactual write-patching case showing attribution is not merely
+  descriptive.
 - [ ] Related work covering residual streams, Transformer circuits, logit lens,
   residual optimization, representation collapse, routing-side residuals,
   parallel Transformer blocks, parameter sharing/MoE, FFN memory, and SAE.
@@ -59,8 +60,8 @@ Risk:
 
 Response:
 
-- include pretrained open-model basis inventory, logit attribution, and causal
-  write ablation.
+- include pretrained open-model basis inventory, logit attribution, and
+  counterfactual write patching.
 
 Risk:
 
@@ -86,3 +87,12 @@ Response:
 
 - present basis-level attribution and ablation as immediate interpretability
   benefit; mention compression/steering as future work.
+
+Risk:
+
+- "Zeroing hidden writes creates out-of-distribution states."
+
+Response:
+
+- avoid zeroing as the main causal check; use clean/corrupt activation patching
+  with matched low-attribution and unrelated-prompt controls.

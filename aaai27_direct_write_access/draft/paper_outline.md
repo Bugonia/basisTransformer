@@ -163,12 +163,13 @@ Experiments:
 
 - basis inventory;
 - module-level logit attribution;
-- direct write ablation on selected prompts.
+- counterfactual write patching on selected clean/corrupt prompt pairs.
 
 Minimum viable result:
 
 - for at least one model and prompt, decompose the target token logit into
-  layer-wise Attention/FFN writes and verify causal effect by ablation.
+  layer-wise Attention/FFN writes and run a patching sanity check with matched
+  controls.
 
 ### 7. Discussion
 
@@ -197,4 +198,3 @@ Close with:
 > Direct residual write access is not an implementation detail of Transformer
 > blocks; it is an architectural resource that determines which learned
 > direction families can directly shape the model's computation.
-

@@ -22,8 +22,8 @@ shows that an Attention output projection can be functionally redundant when it
 is not a direct residual write outlet, sharpening the distinction between
 parameterization and write access. We further outline pretrained open-model
 diagnostics that map the same write-basis structure onto GPT-2, Pythia, and
-Qwen-style models through basis inventory, logit attribution, and causal write
-ablation.
+Qwen-style models through basis inventory, logit attribution, and
+counterfactual write patching.
 
 These results support the view that direct write access is an architectural
 resource in Transformers. The framework reframes residual streams from passive
@@ -35,4 +35,3 @@ coefficients are coupled.
 
 For an 8-page top-conference paper, shorten to 180-220 words after the open-model
 experiments are complete.
-

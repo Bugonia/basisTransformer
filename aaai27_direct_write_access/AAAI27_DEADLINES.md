@@ -49,7 +49,8 @@ By 2026-07-28:
 - 7-page main paper in AAAI format;
 - all main tables and figures;
 - open-model basis inventory;
-- at least one pretrained-model logit attribution or causal write ablation;
+- at least one pretrained-model logit attribution or counterfactual write
+  patching case;
 - related work and limitations;
 - clean references and checklist handling.
 
@@ -59,4 +60,3 @@ By 2026-07-31:
 - supplementary appendix with derivations, extra tables, and experiment
   commands;
 - reproducibility material.
-
