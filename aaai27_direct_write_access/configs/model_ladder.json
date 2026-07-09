@@ -1,0 +1,70 @@
+{
+  "description": "Small mainstream open-model ladder for residual write-economy experiments.",
+  "models": [
+    {
+      "id": "EleutherAI/pythia-70m",
+      "phase": 0,
+      "role": "fastest real open-model validation",
+      "architecture_family": "gpt_neox",
+      "priority": "high",
+      "initial_experiments": ["basis_inventory", "module_logit_attribution"]
+    },
+    {
+      "id": "openai-community/gpt2",
+      "phase": 0,
+      "role": "mature GPT-2 compatibility baseline",
+      "architecture_family": "gpt2",
+      "priority": "high",
+      "initial_experiments": ["basis_inventory", "module_logit_attribution"]
+    },
+    {
+      "id": "EleutherAI/pythia-160m",
+      "phase": 1,
+      "role": "small scaling inside Pythia family",
+      "architecture_family": "gpt_neox",
+      "priority": "medium",
+      "initial_experiments": ["basis_inventory", "trajectory_distance"]
+    },
+    {
+      "id": "EleutherAI/pythia-410m",
+      "phase": 1,
+      "role": "stronger Pythia small-model baseline",
+      "architecture_family": "gpt_neox",
+      "priority": "medium",
+      "initial_experiments": ["basis_inventory", "trajectory_distance"]
+    },
+    {
+      "id": "Qwen/Qwen2.5-0.5B",
+      "phase": 2,
+      "role": "modern compact base model",
+      "architecture_family": "llama_like",
+      "priority": "high",
+      "initial_experiments": ["basis_inventory", "module_logit_attribution", "trajectory_distance"]
+    },
+    {
+      "id": "Qwen/Qwen2.5-1.5B",
+      "phase": 2,
+      "role": "modern scale-up after Qwen2.5-0.5B",
+      "architecture_family": "llama_like",
+      "priority": "medium",
+      "initial_experiments": ["basis_inventory", "grounding_score"]
+    },
+    {
+      "id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "phase": 3,
+      "role": "chat behavior and refusal/safety probes",
+      "architecture_family": "llama_like",
+      "priority": "medium",
+      "initial_experiments": ["basis_inventory", "refusal_basis_support", "grounding_score"]
+    },
+    {
+      "id": "google/gemma-2-2b",
+      "phase": 4,
+      "role": "optional stronger small-model check",
+      "architecture_family": "gemma",
+      "priority": "optional",
+      "initial_experiments": ["basis_inventory", "module_logit_attribution"]
+    }
+  ]
+}
+

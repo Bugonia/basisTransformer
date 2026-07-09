@@ -1,0 +1,88 @@
+# Submission Checklist
+
+## Must Have for a Credible Top-Conference Submission
+
+- [ ] Clear title and abstract.
+- [ ] Main equation and notation table.
+- [ ] Figure 1: write-economy framework.
+- [ ] Figure 2: variant taxonomy.
+- [ ] Table 2: basis-carry result with mechanism columns.
+- [ ] Table 3: five-seed Muon topology sweep with paired deltas.
+- [ ] Main ablation table reports parameter counts and compute indicators.
+- [ ] Table 4: open-model basis inventory.
+- [ ] One pretrained-model logit attribution case.
+- [ ] One causal ablation showing attribution is not merely descriptive.
+- [ ] Related work covering residual streams, Transformer circuits, logit lens,
+  residual optimization, representation collapse, routing-side residuals,
+  parallel Transformer blocks, parameter sharing/MoE, FFN memory, and SAE.
+- [ ] Limitations section.
+- [ ] Reproducibility appendix.
+
+## Nice to Have
+
+- [ ] More than one pretrained model in attribution.
+- [ ] Basis-column attribution, not just module-level delta attribution.
+- [ ] Second dataset or model-scale replication for the main controlled
+  ablation.
+- [ ] Scaling check across model width/depth.
+- [ ] Release scripts and compact result artifacts.
+
+## Kill Criteria
+
+If time is short, remove:
+
+- hallucination application;
+- compression application;
+- SAE section;
+- safety/refusal steering.
+
+Do not remove:
+
+- basis/coefficient formalism;
+- direct write vs coefficient-only distinction;
+- main controlled experiments;
+- one pretrained-model validation.
+
+## Reviewer Risk Checklist
+
+Risk:
+
+- "This is just residual connections are useful."
+
+Response:
+
+- emphasize carry controls and basis/coefficient distinction.
+
+Risk:
+
+- "enwik8 small character models do not prove LLM relevance."
+
+Response:
+
+- include pretrained open-model basis inventory, logit attribution, and causal
+  write ablation.
+
+Risk:
+
+- "Basis is not a true mathematical basis."
+
+Response:
+
+- explicitly define basis as overcomplete learned write dictionary.
+
+Risk:
+
+- "Optimization effects confound architecture effects."
+
+Response:
+
+- include Muon topology sweep and carry controls; discuss residual Jacobian.
+
+Risk:
+
+- "No practical benefit."
+
+Response:
+
+- present basis-level attribution and ablation as immediate interpretability
+  benefit; mention compression/steering as future work.

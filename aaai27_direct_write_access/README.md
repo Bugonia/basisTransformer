@@ -1,0 +1,134 @@
+# Paper 1: Direct Write Access Is an Architectural Resource
+
+Working title:
+
+> Direct Write Access Is an Architectural Resource in Transformers
+
+One-sentence argument:
+
+> In Transformer language models, Attention and FFN sublayers do not merely
+> transform representations; they own distinct learned write-basis families, and
+> preserving direct residual-stream write access for both families is a
+> structural resource that improves modeling quality beyond what coefficient
+> modulation alone can recover.
+
+## Submission Goal
+
+Target AAAI-27.
+
+Hard deadlines checked on 2026-07-09:
+
+- abstract deadline: 2026-07-21 AoE;
+- full paper deadline: 2026-07-28 AoE;
+- supplementary material and code deadline: 2026-07-31 AoE.
+
+Practical target:
+
+- produce a 7-page AAAI-format main paper plus references/checklist pages;
+- include one mature controlled experiment suite from this repo;
+- add at least one pretrained open-model analysis to show relevance beyond
+  toy/self-trained models;
+- prepare supplementary material with derivations, commands, and extra tables.
+
+## Core Claim
+
+Standard Transformer blocks benefit from a dual direct-write structure:
+
+```text
+H_{l+1} = H_l + B_l^A c_l^A(H_l)
+              + B_l^F c_l^F(H_l, B_l^A c_l^A(H_l)).
+```
+
+The key architectural resource is not only depth, nonlinearity, or optimization
+stability. It is direct residual-stream write access by heterogeneous basis
+families:
+
+- Attention output basis: columns of the output projection.
+- FFN output basis: columns of the FFN down projection.
+- Coefficients: context-dependent values generated from the mixed residual
+  history.
+
+## Relation to Residual-Stream Memory
+
+The paper does not deny the residual-stream-as-memory view. It refines it.
+
+- Memory view: the residual stream is the shared state where information is
+  stored, transported, and later read.
+- Write-economy view: a useful shared state also needs an access mechanism:
+  which modules can write directly, which learned basis families they write
+  through, and which coefficient generators choose the write strength.
+
+This distinction is central to the novelty claim. Residual Matrix Transformer
+and related memory-bus work ask how to change or scale the storage medium. This
+paper asks how the standard Transformer allocates write rights inside that
+medium.
+
+## Main Evidence
+
+Existing evidence already available in the repository:
+
+- `standard` beats `parallel`, `block_af`, and `block_fa`.
+- `parallel` keeps dual direct writes but weakens same-layer AF coefficient
+  coupling, giving an intermediate result.
+- `standard_fa` keeps dual direct writes but reverses order, producing only a
+  modest loss increase.
+- `block_af_carry` and `block_fa_carry` preserve cross-module coefficient
+  modulation but remove one direct write family, producing much larger drops.
+- `W_O` absorption shows that an output projection can be algebraically
+  redundant when it is not a direct residual write outlet, sharpening the
+  distinction between parameterization and write access.
+
+Needed new evidence:
+
+- pretrained open-model basis inventory;
+- module-level logit attribution on at least Pythia-70M/GPT-2 and preferably
+  Qwen2.5-0.5B;
+- causal write ablations on one pretrained model.
+
+## File Map
+
+```text
+ACTIVE_BOARD.md
+AAAI27_DEADLINES.md
+tex/
+  main.tex
+  references.bib
+  aaai2027.sty
+  aaai2027.bst
+draft/
+  abstract.md
+  introduction_skeleton.md
+  paper_outline.md
+notes/
+  claim_evidence_map.md
+  positioning.md
+tables/
+scripts/
+results/
+planning/
+experiments_to_run.md
+figures_and_tables.md
+submission_checklist.md
+```
+
+## Decision Boundary
+
+This paper should stay focused.
+
+Include:
+
+- residual stream as a write space;
+- basis/coefficient decomposition;
+- direct write access vs coefficient-only modulation;
+- controlled architecture experiments;
+- one pretrained-model validation layer.
+
+Defer:
+
+- hallucination detection;
+- safety steering;
+- compression;
+- SAE alignment.
+
+Those become follow-up papers, unless one small result is needed as a teaser in
+the Discussion.

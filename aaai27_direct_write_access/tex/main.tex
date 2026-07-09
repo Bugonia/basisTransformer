@@ -1,0 +1,460 @@
+\documentclass[letterpaper]{article}
+\usepackage[submission]{aaai2027}
+% The serif, sans-serif, and monospaced fonts are loaded automatically by
+% aaai2027.sty. Do not add font packages.
+\usepackage[hyphens]{url}
+\usepackage{graphicx}
+\urlstyle{rm}
+\def\UrlFont{\rm}
+\usepackage{natbib}
+\usepackage{caption}
+\frenchspacing
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\pdfinfo{
+/TemplateVersion (2027.1)
+}
+
+\setcounter{secnumdepth}{1}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Attn}{\mathrm{Attn}}
+\newcommand{\FFN}{\mathrm{FFN}}
+\newcommand{\LN}{\mathrm{LN}}
+\newcommand{\BA}{B^{A}}
+\newcommand{\BF}{B^{F}}
+\newcommand{\ca}{c^{A}}
+\newcommand{\cf}{c^{F}}
+
+\title{Direct Write Access Is an Architectural Resource in Transformers}
+
+\author{
+    Anonymous Submission
+}
+\affiliations{
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Transformer residual streams are often described as shared representation
+spaces through which Attention heads, feed-forward networks (FFNs), embeddings,
+and unembeddings communicate. This view, while useful, does not distinguish two
+architecturally different roles: directly writing learned directions into the
+residual stream and merely modulating the coefficients of another module's
+writes. We introduce a basis/coefficient view of Transformer blocks in which
+Attention output projections and FFN down projections define distinct learned
+write-basis families, while their coefficients are generated dynamically from
+the mixed residual history. Under this view, the standard Transformer block is
+not only a composition of Attention and FFN computations; it is a dual-write
+system in which both modules retain direct residual-stream write access.
+
+We test this interpretation through controlled decoder-only language-modeling
+experiments on enwik8. Standard Attention-then-FFN blocks outperform parallel,
+order-reversed, block-composed, and carry variants. Crucially, carry variants
+give the removed module additional influence over coefficient generation but
+still deny it direct write access, and they remain substantially weaker than
+standard dual-write blocks. A complementary output-projection absorption control
+shows that an Attention output projection can be functionally redundant when it
+is not a direct residual write outlet, sharpening the distinction between
+parameterization and write access. These results support the view that direct
+write access is an architectural resource in Transformers and reframe residual
+streams as write economies: shared spaces where model quality depends on which
+heterogeneous basis families can directly write and how their dynamic
+coefficients are coupled.
+\end{abstract}
+
+\section{Introduction}
+
+The residual stream is the central communication channel of a Transformer
+language model. Token embeddings, Attention heads, feed-forward networks
+(FFNs), normalization layers, and the unembedding all read from or write to this
+shared state \citep{vaswani2017attention,elhage2021framework}. It is therefore
+natural to view the stream as a representation space or memory substrate: a
+state whose geometry, features, or linear probes reveal what the model stores
+at a given layer \citep{nostalgebraist2020logit,belrose2023tuned}. This view is
+necessary but not sufficient. A memory substrate is only useful through its
+access mechanism. In Transformers, the corresponding architectural question is:
+which modules are allowed to directly write their own learned directions into
+the residual stream?
+
+We argue that this distinction matters. A sublayer may influence the residual
+stream in two different ways. It may directly write an update through its own
+output basis, or it may only shape the coefficients used by a later sublayer.
+These roles are conflated in the standard description of Transformer blocks,
+where Attention and FFN are often treated as two nonlinear transformations
+connected by residual paths. In a standard pre-normalization block, however,
+both sublayers are direct authors of the residual stream: Attention writes
+through its output projection, and the FFN writes through its down projection.
+In contrast, block-composed variants such as $h+\FFN(\Attn(h))$ allow
+Attention to affect FFN coefficients but remove Attention's direct write
+outlet.
+
+We formalize this distinction through a basis/coefficient view of residual
+updates. The columns of an Attention output projection form an Attention
+write-basis family, while the columns of an FFN down projection form an FFN
+write-basis family. The corresponding coefficients are not fixed parameters:
+Attention coefficients combine context-dependent routing weights with value
+coordinates, and FFN coefficients are nonlinear activations generated from the
+current residual state. A standard block therefore produces updates of the form
+\begin{equation}
+\Delta H_l = \BA_l \ca_l(H_l) +
+             \BF_l \cf_l(H_l, \BA_l \ca_l(H_l)),
+\label{eq:dual-write}
+\end{equation}
+where both basis families write directly and both coefficient functions are
+coupled through the mixed residual history.
+
+This view makes a concrete prediction: architectures that preserve both direct
+write families should remain closer to the standard Transformer than
+architectures that allow one module only to modulate another module's
+coefficients. We test this prediction by comparing standard, parallel,
+order-reversed, block-composed, and carry variants under matched
+language-modeling settings. The carry variants are especially diagnostic: they
+pass additional intermediate signals across layers, giving the removed module a
+stronger role in coefficient generation, but they still do not restore its
+direct write basis.
+
+Our contributions are fourfold. First, we introduce a basis/coefficient
+formalism that separates direct residual write access from coefficient
+modulation in Transformer blocks. Second, we derive the Attention and FFN
+write-basis families for standard decoder-only Transformers and show how their
+coefficients depend on residual history. Third, we provide controlled
+language-modeling experiments showing that dual direct write access explains a
+substantial part of the standard block advantage, beyond ordering and
+optimization effects. Fourth, we instantiate the framework as a diagnostic path
+for pretrained open models through basis inventory, logit attribution, and
+causal write-ablation experiments.
+
+\section{Residual Streams as Write Economies}
+
+Let $H_l=[h_{l,1},\ldots,h_{l,T}]\in\R^{d\times T}$ denote the residual stream
+at layer $l$, with token vectors written as columns. A standard pre-LayerNorm
+Transformer block can be written as
+\begin{align}
+U_l &= H_l + A_l(\LN(H_l)),\\
+H_{l+1} &= U_l + F_l(\LN(U_l)).
+\end{align}
+Equivalently,
+\begin{equation}
+H_{l+1}=H_l+\Delta_l^A+\Delta_l^F.
+\end{equation}
+The usual residual-path view emphasizes the identity term $H_l$. Our focus is
+the authorship of the update terms: which learned direction families can write
+directly into the shared stream.
+
+We call a learned matrix column family a \emph{write basis} when it is the final
+linear outlet through which a submodule writes into the residual stream. This
+does not require linear independence; the basis may be overcomplete,
+correlated, and redundant. A module has \emph{direct write access} if its own
+write basis appears in the residual update. A module has only
+\emph{coefficient access} if it can affect another module's coefficient
+generator but cannot write its own final directions.
+
+\section{Attention and FFN Write Bases}
+
+\paragraph{Attention.}
+For one Attention head $r$, let
+$q_i^r=W_Q^r x_i$, $k_j^r=W_K^r x_j$, and $v_j^r=W_V^r x_j$, where
+$x_i$ is the normalized residual vector at position $i$. The causal routing
+weights are
+\begin{equation}
+\alpha_{ij}^r =
+\frac{\exp((q_i^r)^\top k_j^r/\sqrt{d_h})}
+{\sum_{m\leq i}\exp((q_i^r)^\top k_m^r/\sqrt{d_h})}.
+\end{equation}
+Writing the output projection as $W_O=[O_1,\ldots,O_h]$ and the columns of
+$O_r$ as $o_{r,a}$, the Attention residual update at token $i$ is
+\begin{equation}
+\Delta_{l,i}^{A}
+=\sum_{r=1}^{h}\sum_{a=1}^{d_h}
+\left(\sum_{j\leq i}\alpha_{ij}^r v_{j,a}^r\right)o_{r,a}.
+\label{eq:attn-basis}
+\end{equation}
+Thus the Attention write basis consists of the columns of $W_O$, while the
+coefficients combine routing weights and value coordinates.
+
+\paragraph{FFN.}
+For a standard FFN,
+\begin{equation}
+F_l(z)=W_l^2\phi(W_l^1z+b_l^1)+b_l^2.
+\end{equation}
+Let $v_{l,k}$ be the $k$-th column of $W_l^2$. Ignoring the output bias,
+\begin{equation}
+F_l(z)=\sum_k
+\phi(\langle u_{l,k},z\rangle+b_{l,k})v_{l,k}.
+\label{eq:ffn-basis}
+\end{equation}
+The FFN write basis is therefore the column family of the down projection, and
+the coefficient of each direction is a nonlinear detector response computed
+from the current residual state.
+
+\paragraph{Coupled coefficients.}
+The write bases are static learned outlets, but the coefficients are functions
+of residual history. In a standard Attention-then-FFN block, the FFN
+coefficients depend on the Attention write made earlier in the same block.
+Therefore the standard block is not the sum of two independent
+basis/coefficient pairs; it is a coupled dual-write system.
+
+\section{Architectures That Separate Writes and Coefficients}
+
+Table~\ref{tab:variants} summarizes the variants used to separate direct write
+access from ordering and coefficient coupling. The key contrast is between
+architectures that preserve both direct write families and architectures where
+one module only modulates coefficients before the other module writes.
+
+\begin{table*}[t]
+\centering
+\caption{Architecture variants separate direct write access, ordering, and
+coefficient coupling. A checkmark indicates that the module writes its own
+output basis directly into the residual stream.}
+\label{tab:variants}
+\begin{tabular}{lllll}
+\toprule
+Variant & Update form & Attn write & FFN write & Main contrast \\
+\midrule
+standard & $h+\Attn(h)+\FFN(h+\Attn(h))$ & yes & yes & full dual-write block \\
+standard\_fa & $h+\FFN(h)+\Attn(h+\FFN(h))$ & yes & yes & order reversed \\
+parallel & $h+\Attn(h)+\FFN(h)$ & yes & yes & same-layer AF coupling removed \\
+block\_af & $h+\FFN(\Attn(h))$ & no & yes & Attention coefficient-only \\
+block\_fa & $h+\Attn(\FFN(h))$ & yes & no & FFN coefficient-only \\
+block\_af\_carry & $h+\FFN(\Attn(h)+\Attn(h_{-1}))$ & no & yes & Attention carry only \\
+block\_fa\_carry & $h+\Attn(\FFN(h)+\FFN(h_{-1}))$ & yes & no & FFN carry only \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\section{Controlled Language-Model Experiments}
+
+\paragraph{Controlled ablation protocol.}
+We evaluate decoder-only language models on enwik8 character-level language
+modeling. All compared variants are implemented in the same codebase, trained
+from scratch on identical train/validation/test splits, and evaluated with the
+same tokenizer, context length, model width, depth, dropout, and optimization
+schedule unless explicitly noted. Checkpoints are selected by validation loss
+and evaluated once on the held-out test split. Unless otherwise stated, models
+use 8 layers, 8 heads, hidden size 512, context length 512, and batch size 256.
+We report validation and test loss; lower is better. The carry variants share
+weights between the current-state and previous-state branches, so their
+parameter counts remain matched to the corresponding block variants. They do,
+however, invoke one submodule twice per block. Thus their underperformance is
+not explained by receiving less computation than the standard dual-write block.
+
+\paragraph{Basis-carry comparison.}
+Table~\ref{tab:basis-carry} shows the main basis-carry experiment. Reversing the
+standard AF order while keeping both direct write families causes a modest
+degradation. In contrast, carry variants remain much weaker even though they
+give the removed module additional coefficient influence through a previous
+middle signal.
+
+\begin{table*}[t]
+\centering
+\caption{Basis-carry result on enwik8. Losing one direct write family is much
+more damaging than reversing sublayer order while preserving both direct write
+families. Results are mean $\pm$ sample standard deviation over two seeds.}
+\label{tab:basis-carry}
+\begin{tabular}{llllrr}
+\toprule
+Variant & Attn write & FFN write & Carry signal & Test loss $\downarrow$ & Delta $\downarrow$ \\
+\midrule
+standard & yes & yes & no & $0.8682 \pm 0.0035$ & $0.0000$ \\
+standard\_fa & yes & yes & no & $0.8806 \pm 0.0048$ & $+0.0124$ \\
+block\_af\_carry & no & yes & yes & $0.9296 \pm 0.0028$ & $+0.0613$ \\
+block\_fa\_carry & yes & no & yes & $0.9330 \pm 0.0069$ & $+0.0648$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\paragraph{Robustness under stronger optimization.}
+Table~\ref{tab:topology} reports a Muon-optimized topology sweep. Absolute gaps
+shrink compared with shorter AdamW runs, but the qualitative ordering remains:
+standard dual-write blocks are strongest, dual-write alternatives are closer
+than block variants, and carry does not close the gap.
+
+\begin{table}[t]
+\centering
+\caption{Topology sweep under a stronger optimization budget.}
+\label{tab:topology}
+\begin{tabular}{lrr}
+\toprule
+Variant & Test loss $\downarrow$ & Delta $\downarrow$ \\
+\midrule
+standard & 0.8363 & 0.0000 \\
+standard\_fa & 0.8509 & +0.0146 \\
+parallel & 0.8551 & +0.0188 \\
+block\_af & 0.8635 & +0.0272 \\
+block\_af\_carry & 0.8611 & +0.0248 \\
+block\_fa & 0.8872 & +0.0509 \\
+block\_fa\_carry & 0.8878 & +0.0515 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Output-projection absorption control.}
+In a block-AF topology without an intervening nonlinearity or normalization
+between Attention and FFN, the Attention output projection $W_O$ can be absorbed
+into the FFN input projection. Empirically, removing $W_O$ in this setting is
+quality-neutral or slightly beneficial, while the original block-AF with a
+middle normalization remains stronger. This control supports the distinction
+between a projection as an internal parameterization and a projection as a
+direct residual write outlet.
+
+\section{Pretrained Open-Model Diagnostics}
+
+The controlled experiments isolate architecture mechanisms, but the same
+write-basis decomposition also maps onto mainstream pretrained decoder-only
+models. In GPT-NeoX/Pythia models, Attention output bases correspond to
+Attention dense output projections and FFN bases to dense-to-hidden output
+projections. In GPT-2, both appear as output \texttt{c\_proj} modules. In
+Llama/Qwen-style models, they correspond to \texttt{o\_proj} and
+\texttt{down\_proj}.
+
+% TODO: Insert open-model inventory table after running inspect_model_basis.py.
+% TODO: Insert module-level logit attribution and causal write ablation.
+
+\section{Related Work}
+
+\paragraph{Residual streams, memory, and Transformer circuits.}
+Transformer Circuits frames the residual stream as a shared communication space
+and decomposes Attention through QK and OV circuits
+\citep{elhage2021framework}. Recent architectural work further treats the
+residual stream as a scalable memory substrate, for example by replacing vector
+residual states with matrix-valued residual memories \citep{mak2025residual}.
+Our work is complementary but more fine-grained. We do not ask whether the
+stream can store information or whether its capacity can be enlarged; we ask
+how the architecture allocates direct write access to that stream. In this
+sense, the write-economy view refines the memory-bus view by separating the
+storage medium from the write bases and coefficient generators that use it.
+
+\paragraph{Residual optimization, normalization, and scaling.}
+Residual connections are known to ease optimization in deep networks
+\citep{he2016identity}. In Transformers, a large body of work modifies
+normalization placement, residual scaling, initialization, or branch gating to
+stabilize deep training. Pre-LN analysis explains why moving normalization
+inside residual blocks improves gradient behavior \citep{xiong2020layer};
+ScaleNorm/FixNorm and T-Fixup-style initialization reduce dependence on warmup
+or normalization \citep{nguyen2019transformers,huang2020improving}; Admin
+links Transformer training difficulty to residual-branch amplification and
+uses adaptive initialization to stabilize early training
+\citep{liu2020understanding}; ReZero and LayerScale gate residual branches
+\citep{bachlechner2021rezero,touvron2021going};
+NormFormer adds extra normalization and head-wise scaling around sublayer
+outputs \citep{shleifer2021normformer}; and DeepNorm modifies residual
+normalization and initialization to scale Transformers to extreme depth
+\citep{wang2022deepnet}. ResiDual further combines Pre-LN and Post-LN residual
+routes to address both gradient and representation-collapse issues
+\citep{xie2023residual}. These works primarily regulate the magnitude,
+conditioning, or gradient behavior of residual updates. Our analysis is
+complementary: it asks which learned basis family owns direct write access once
+an update is allowed to enter the stream.
+
+\paragraph{Residual connections and representation collapse.}
+Another line of analysis studies residual connections as a source of
+representational expressivity rather than only trainability. Pure self-attention
+networks without skip connections or MLPs have been shown to converge toward
+token-uniform low-rank representations, while skip connections and MLPs prevent
+this degeneration \citep{dong2021attention}. This supports the broader view
+that residual pathways and FFNs play functional roles in Transformer
+computation. Our contribution is more specific: conditioned on using residual
+updates, we ask which heterogeneous output dictionaries are allowed to write
+directly into the shared state.
+
+\paragraph{Residuals in routing and cross-layer reads.}
+Not all residual variants operate on the final hidden-state update. RealFormer
+adds residual connections over Attention scores and reports more stable and
+sparser Attention \citep{he2021realformer}. Deep Transformer variants also pass
+combinations of previous layers to later layers \citep{wang2019learning}. In
+our terminology, such methods modify coefficient or read history: they change
+the states from which routing and activations are generated. This differs from
+restoring a missing final write basis. A module can receive richer history or
+stronger routing residuals while still being denied direct residual-stream
+write access.
+
+\paragraph{Parallel and alternative Transformer blocks.}
+Parallel Attention/FFN designs appear in large language models and have been
+studied as alternatives to the serial block
+\citep{black2022gptneox,chowdhery2023palm,sonkar2023paf}. Our framework
+explains why parallel variants can remain competitive: they preserve both
+direct write families while weakening same-layer coefficient coupling.
+
+\paragraph{Parameter sharing and conditional experts.}
+Universal Transformers and ALBERT-style models reuse transformation parameters
+across depth to improve parameter efficiency or add a recurrent inductive bias
+\citep{dehghani2018universal,lan2019albert}. In the opposite direction,
+sparsely gated mixture-of-experts layers, GShard, and Switch Transformers
+increase parameter capacity through conditional expert routing
+\citep{shazeer2017outrageously,lepikhin2020gshard,fedus2021switch}. Our
+write-economy view gives both families a common interpretation: parameter
+sharing reduces the number of independent layer-indexed write dictionaries,
+whereas MoE conditionally expands the FFN write-basis bank by routing tokens to
+expert-specific output bases.
+
+\paragraph{FFN memories, attribution, and learned dictionaries.}
+FFNs have been interpreted as key-value memories or learned feature
+dictionaries \citep{geva2021transformer}. Sparse autoencoders and activation
+steering study learned or discovered directions in residual space
+\citep{bricken2023monosemanticity,turner2023activation}. Our architectural
+basis view is complementary: it identifies write dictionaries already present
+in the model's parameterization.
+
+\section{Discussion and Limitations}
+
+The results suggest that residual connections should not be viewed only as
+optimization aids. They allocate write rights in a shared computational
+workspace. For the model scales studied here, Attention and FFN benefit from
+retaining separate, heterogeneous direct write outlets.
+
+This perspective also gives a common language for residual enhancements and
+alternatives. Branch gates, residual scaling rules, and normalization changes
+control the amplitude and conditioning of writes. Residual attention and
+cross-layer aggregation enrich coefficient generation and read history. Dual
+residual paths alter how normalized and unnormalized states coexist. All of
+these designs can be described inside the same write economy by specifying
+three objects: the state read by a coefficient generator, the basis family that
+receives direct write access, and the scale or gate applied to the resulting
+write. This suggests a broader use of the framework beyond the specific block
+variants tested here.
+
+The same language also clarifies two widely used capacity interventions.
+Looped or parameter-shared Transformers keep computational depth but reuse the
+same block parameters across multiple depth steps. They can therefore be viewed
+as reducing the number of independent Attention and FFN write-basis families
+available across depth, while still applying those bases repeatedly to different
+residual states. Our looped-Transformer sweep is consistent with this
+interpretation: test loss degrades smoothly as the number of unique blocks is
+reduced, with moderate sharing remaining competitive but full recurrence losing
+substantial capacity. MoE layers move in the opposite direction. Replacing a
+dense FFN with a routed expert set gives each expert its own down-projection
+write basis; the router becomes a coefficient-side mechanism that selects which
+expert basis bank is active for each token. Thus looped Transformers and MoE
+are opposite interventions on the write-basis budget: one reuses fewer basis
+families across depth, while the other conditionally expands the FFN basis
+family without activating all parameters.
+
+Several limitations remain. First, the controlled experiments use relatively
+small decoder-only language models on enwik8, so the paper does not claim a
+complete scaling law for large language models. Second, the term ``basis''
+means an overcomplete learned write dictionary, not a linearly independent
+basis. Third, the framework does not imply that individual write directions are
+monosemantic. Fourth, pretrained open-model attribution and intervention
+experiments are necessary to strengthen the connection between the controlled
+architecture results and deployed language models.
+
+\section{Conclusion}
+
+We introduced a basis/coefficient view of Transformer residual updates and used
+it to distinguish direct write access from coefficient-only modulation.
+Controlled topology experiments show that preserving both Attention and FFN
+direct write families is substantially stronger than allowing one module only
+to modulate the other's coefficients. Direct residual write access is therefore
+not an implementation detail of Transformer blocks; it is an architectural
+resource that determines which learned direction families can directly shape a
+model's computation.
+
+\bibliography{references}
+
+\end{document}
