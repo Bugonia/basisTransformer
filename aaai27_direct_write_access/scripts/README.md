@@ -26,3 +26,27 @@ Future scripts:
 - `basis_logit_attribution.py`: project writes through the unembedding;
 - `coefficient_trajectory.py`: collect coefficient trajectory statistics;
 - `basis_interventions.py`: zero, mask, or project away selected write bases.
+
+## `prepare_robustness_corpora.py`
+
+Convert public Hugging Face datasets into plain text files for the current
+character-level training script.
+
+Examples:
+
+```bash
+python aaai27_direct_write_access/scripts/prepare_robustness_corpora.py \
+  --data-dir "$GLOBAL/data" \
+  --corpus wikitext103
+
+python aaai27_direct_write_access/scripts/prepare_robustness_corpora.py \
+  --data-dir "$GLOBAL/data" \
+  --corpus fineweb_edu \
+  --fineweb-chars 100000000
+```
+
+Outputs:
+
+- `wikitext103.txt`;
+- `fineweb_edu_100m.txt`;
+- matching `.meta.json` files with source and size metadata.

@@ -112,6 +112,28 @@ if [ ! -e "$PROJECT_HOME/data" ]; then
 fi
 ```
 
+Prepare robustness corpora for the second-dataset checks:
+
+```bash
+python aaai27_direct_write_access/scripts/prepare_robustness_corpora.py \
+  --data-dir "$GLOBAL/data" \
+  --corpus wikitext103
+
+python aaai27_direct_write_access/scripts/prepare_robustness_corpora.py \
+  --data-dir "$GLOBAL/data" \
+  --corpus fineweb_edu \
+  --fineweb-chars 100000000
+```
+
+This creates:
+
+```text
+$GLOBAL/data/wikitext103.txt
+$GLOBAL/data/wikitext103.txt.meta.json
+$GLOBAL/data/fineweb_edu_100m.txt
+$GLOBAL/data/fineweb_edu_100m.txt.meta.json
+```
+
 Pre-download open models for offline diagnostics:
 
 ```bash

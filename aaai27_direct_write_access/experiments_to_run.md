@@ -233,6 +233,36 @@ Risk:
 - MoE experiments can easily create a second paper's worth of obligations, so
   they should not displace open-model attribution and causal ablation.
 
+### E6: Second-Dataset Robustness
+
+Priority:
+
+- important after the five-seed enwik8 main ablation starts running.
+
+Datasets:
+
+- `wikitext103.txt`: public WikiText-103 text converted to a plain text file.
+- `fineweb_edu_100m.txt`: 100M-character subset streamed from FineWeb-Edu.
+
+Variants:
+
+- `standard`;
+- `standard_fa`;
+- `block_af_carry`;
+- `block_fa_carry`.
+
+Protocol:
+
+- use the same model scale and optimizer as the enwik8 main ablation;
+- start with seeds `1 2 3`;
+- if the trend matches and compute remains, expand to five seeds.
+
+Message:
+
+> enwik8 isolates the architectural mechanism in a cheap controlled setting;
+> WikiText-103 or FineWeb-Edu checks that the direct-write-access trend is not
+> specific to one small character-level corpus.
+
 ## Experiments Not for First Submission
 
 Defer:
