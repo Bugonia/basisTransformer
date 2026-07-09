@@ -41,17 +41,21 @@
 \maketitle
 
 \begin{abstract}
-Transformer residual streams are often described as shared representation
-spaces through which Attention heads, feed-forward networks (FFNs), embeddings,
-and unembeddings communicate. This view, while useful, does not distinguish two
-architecturally different roles: directly writing learned directions into the
-residual stream and merely modulating the coefficients of another module's
-writes. We introduce a basis/coefficient view of Transformer blocks in which
-Attention output projections and FFN down projections define distinct learned
-write-basis families, while their coefficients are generated dynamically from
-the mixed residual history. Under this view, the standard Transformer block is
-not only a composition of Attention and FFN computations; it is a dual-write
-system in which both modules retain direct residual-stream write access.
+Residual connections are usually treated as optimization devices or shared
+state pathways. We study a more structural role: a residual block writes
+learned directions into a persistent state with coefficients generated from
+that same state. Transformer residual streams provide a particularly rich
+instance because Attention heads, feed-forward networks (FFNs), embeddings, and
+unembeddings all communicate through the same stream. This view, while useful,
+does not distinguish two architecturally different roles: directly writing
+learned directions into the residual stream and merely modulating the
+coefficients of another module's writes. We introduce a basis/coefficient view
+of Transformer blocks in which Attention output projections and FFN down
+projections define distinct learned write-basis families, while their
+coefficients are generated dynamically from the mixed residual history. Under
+this view, the standard Transformer block is not only a composition of
+Attention and FFN computations; it is a dual-write system in which both modules
+retain direct residual-stream write access.
 
 We test this interpretation through controlled decoder-only language-modeling
 experiments on enwik8. Standard Attention-then-FFN blocks outperform parallel,
@@ -70,17 +74,25 @@ coefficients are coupled.
 
 \section{Introduction}
 
-The residual stream is the central communication channel of a Transformer
-language model. Token embeddings, Attention heads, feed-forward networks
-(FFNs), normalization layers, and the unembedding all read from or write to this
-shared state \citep{vaswani2017attention,elhage2021framework}. It is therefore
-natural to view the stream as a representation space or memory substrate: a
-state whose geometry, features, or linear probes reveal what the model stores
-at a given layer \citep{nostalgebraist2020logit,belrose2023tuned}. This view is
-necessary but not sufficient. A memory substrate is only useful through its
-access mechanism. In Transformers, the corresponding architectural question is:
-which modules are allowed to directly write their own learned directions into
-the residual stream?
+Residual connections appear throughout modern deep learning, from convolutional
+networks to language models \citep{he2016identity,vaswani2017attention}. They
+are usually explained as identity paths that stabilize optimization, preserve
+signals, or let layers refine a shared representation. We ask a complementary
+functional question: when a residual block updates its state, what learned
+directions does it write through, and which computation generates the
+coefficients of those directions?
+
+The Transformer residual stream is a particularly revealing case. Token
+embeddings, Attention heads, feed-forward networks (FFNs), normalization
+layers, and the unembedding all read from or write to the same state
+\citep{vaswani2017attention,elhage2021framework}. It is therefore natural to
+view the stream as a representation space or memory substrate: a state whose
+geometry, features, or linear probes reveal what the model stores at a given
+layer \citep{nostalgebraist2020logit,belrose2023tuned}. This view is necessary
+but not sufficient. A memory substrate is only useful through its access
+mechanism. In Transformers, the corresponding architectural question is: which
+modules are allowed to directly write their own learned directions into the
+residual stream?
 
 We argue that this distinction matters. A sublayer may influence the residual
 stream in two different ways. It may directly write an update through its own
@@ -121,16 +133,34 @@ direct write basis.
 
 Our contributions are fourfold. First, we introduce a basis/coefficient
 formalism that separates direct residual write access from coefficient
-modulation in Transformer blocks. Second, we derive the Attention and FFN
+modulation in residual networks. Second, we derive the Attention and FFN
 write-basis families for standard decoder-only Transformers and show how their
 coefficients depend on residual history. Third, we provide controlled
 language-modeling experiments showing that dual direct write access explains a
-substantial part of the standard block advantage, beyond ordering and
-optimization effects. Fourth, we instantiate the framework as a diagnostic path
-for pretrained open models through basis inventory, logit attribution, and
+substantial part of the standard Transformer block advantage, beyond ordering
+and optimization effects. Fourth, we instantiate the framework as a diagnostic
+path for pretrained open models through basis inventory, logit attribution, and
 causal write-ablation experiments.
 
 \section{Residual Streams as Write Economies}
+
+A generic residual block has the form
+\begin{equation}
+x_{l+1}=x_l+g_l(x_l).
+\end{equation}
+When the last operation in $g_l$ is a learned linear map, the update can often
+be written as
+\begin{equation}
+g_l(x_l)=B_l c_l(x_l),
+\label{eq:generic-write}
+\end{equation}
+where $B_l$ is a learned family of write directions and $c_l(x_l)$ is a
+state-dependent coefficient vector. This covers fully connected residual MLP
+blocks directly. In convolutional residual blocks, the same idea applies with
+spatially shared convolutional output channels acting as write dictionaries
+over local neighborhoods. Transformer blocks are a more structured case: within
+one residual stream, multiple heterogeneous submodules own different output
+dictionaries and generate coefficients in different ways.
 
 Let $H_l=[h_{l,1},\ldots,h_{l,T}]\in\R^{d\times T}$ denote the residual stream
 at layer $l$, with token vectors written as columns. A standard pre-LayerNorm
@@ -404,9 +434,14 @@ in the model's parameterization.
 \section{Discussion and Limitations}
 
 The results suggest that residual connections should not be viewed only as
-optimization aids. They allocate write rights in a shared computational
-workspace. For the model scales studied here, Attention and FFN benefit from
-retaining separate, heterogeneous direct write outlets.
+optimization aids. More generally, residual blocks allocate write rights into a
+persistent computational state. In a simple residual MLP or convolutional
+network, this allocation may be dominated by a single output dictionary per
+block. Transformers expose a richer version of the same phenomenon: multiple
+heterogeneous modules write to the same residual stream, and model quality
+depends on which of them retain direct write outlets. For the model scales
+studied here, Attention and FFN benefit from retaining separate, heterogeneous
+direct write outlets.
 
 This perspective also gives a common language for residual enhancements and
 alternatives. Branch gates, residual scaling rules, and normalization changes
@@ -435,25 +470,30 @@ are opposite interventions on the write-basis budget: one reuses fewer basis
 families across depth, while the other conditionally expands the FFN basis
 family without activating all parameters.
 
-Several limitations remain. First, the controlled experiments use relatively
-small decoder-only language models on enwik8, so the paper does not claim a
-complete scaling law for large language models. Second, the term ``basis''
-means an overcomplete learned write dictionary, not a linearly independent
-basis. Third, the framework does not imply that individual write directions are
-monosemantic. Fourth, pretrained open-model attribution and intervention
-experiments are necessary to strengthen the connection between the controlled
-architecture results and deployed language models.
+Several limitations remain. First, although the formalism applies to residual
+networks beyond Transformers, our controlled experiments target decoder-only
+Transformer language models because their Attention/FFN structure separates
+multiple write families cleanly. We do not claim to have experimentally
+characterized residual write economies in convolutional networks or residual
+MLPs. Second, the controlled experiments use relatively small models on enwik8,
+so the paper does not claim a complete scaling law for large language models.
+Third, the term ``basis'' means an overcomplete learned write dictionary, not a
+linearly independent basis. Fourth, the framework does not imply that
+individual write directions are monosemantic. Finally, pretrained open-model
+attribution and intervention experiments are necessary to strengthen the
+connection between the controlled architecture results and deployed language
+models.
 
 \section{Conclusion}
 
-We introduced a basis/coefficient view of Transformer residual updates and used
-it to distinguish direct write access from coefficient-only modulation.
-Controlled topology experiments show that preserving both Attention and FFN
-direct write families is substantially stronger than allowing one module only
-to modulate the other's coefficients. Direct residual write access is therefore
-not an implementation detail of Transformer blocks; it is an architectural
-resource that determines which learned direction families can directly shape a
-model's computation.
+We introduced a basis/coefficient view of residual updates and used it to
+distinguish direct write access from coefficient-only modulation. In
+Transformers, controlled topology experiments show that preserving both
+Attention and FFN direct write families is substantially stronger than allowing
+one module only to modulate the other's coefficients. Direct residual write
+access is therefore not an implementation detail of Transformer blocks; it is a
+general architectural resource that determines which learned direction families
+can directly shape a model's computation.
 
 \bibliography{references}
 

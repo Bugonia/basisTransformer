@@ -6,11 +6,13 @@ Working title:
 
 One-sentence argument:
 
-> In Transformer language models, Attention and FFN sublayers do not merely
-> transform representations; they own distinct learned write-basis families, and
-> preserving direct residual-stream write access for both families is a
-> structural resource that improves modeling quality beyond what coefficient
-> modulation alone can recover.
+> Residual blocks do not merely preserve signals through skip connections; they
+> write learned direction families into persistent states with coefficients
+> generated from those states. Transformer language models expose this write
+> economy especially clearly because Attention and FFN sublayers own distinct
+> write-basis families, and preserving direct residual-stream write access for
+> both families improves modeling quality beyond what coefficient modulation
+> alone can recover.
 
 ## Submission Goal
 
@@ -32,7 +34,17 @@ Practical target:
 
 ## Core Claim
 
-Standard Transformer blocks benefit from a dual direct-write structure:
+The general residual-write form is:
+
+```text
+x_{l+1} = x_l + B_l c_l(x_l).
+```
+
+This can describe residual MLP blocks, convolutional residual blocks with
+spatially shared output-channel dictionaries, and Transformer blocks.
+
+Standard Transformer blocks then instantiate a richer dual direct-write
+structure:
 
 ```text
 H_{l+1} = H_l + B_l^A c_l^A(H_l)
@@ -62,6 +74,18 @@ This distinction is central to the novelty claim. Residual Matrix Transformer
 and related memory-bus work ask how to change or scale the storage medium. This
 paper asks how the standard Transformer allocates write rights inside that
 medium.
+
+## Scope Boundary
+
+The theory is broader than Transformers, but Paper 1 should not promise a full
+empirical study of all residual networks. The experimental claim is deliberately
+focused:
+
+- general framework: residual updates as learned basis writes with dynamic
+  coefficients;
+- primary empirical testbed: Transformer language models, because Attention and
+  FFN provide separable heterogeneous write families;
+- follow-up direction: residual MLP/CNN/ResNet write-economy studies.
 
 ## Main Evidence
 
