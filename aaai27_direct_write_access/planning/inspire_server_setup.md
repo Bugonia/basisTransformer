@@ -182,11 +182,31 @@ PY
 Launch the submission-grade five-seed topology rerun:
 
 ```bash
-GPUS="0 1 2 3" \
-SEEDS="1 2 3 4 5" \
-DATA_FILE="$GLOBAL/data/enwik8.txt" \
-BASE_RUN="aaai27_topology_sweep_pre_layernorm_muon_8l_512d_ctx512_bs256_5seed" \
-bash experiments/topology_sweep/run_topology_sweep.sh
+export PYTHON_BIN="$GLOBAL/envs/basis-transformer-cu128/bin/python"
+export DATA_FILE="$GLOBAL/data/enwik8.txt"
+export SEEDS="1 2 3 4 5"
+export VARIANTS="standard standard_fa parallel block_af block_fa block_af_carry block_fa_carry"
+export BASE_RUN="aaai27_enwik8_topology_muon_8l_512d_ctx512_bs256_5seed"
+export RESUME=1
+export COMPILE=0
+export MONITOR_INTERVAL=60
+
+bash aaai27_direct_write_access/scripts/run_topology_with_monitor.sh
 ```
 
-Adjust `GPUS` to match the allocated GPU ids.
+The script automatically uses all visible GPUs through `nvidia-smi`. To restrict
+it to a subset, set `GPUS`, for example:
+
+```bash
+export GPUS="0 1 2 3"
+```
+
+Monitoring outputs are written to:
+
+```text
+reports/${BASE_RUN}_launcher.log
+reports/${BASE_RUN}_monitor.txt
+reports/${BASE_RUN}_monitor.html
+reports/${BASE_RUN}_aggregate.csv
+reports/${BASE_RUN}_report.svg
+```
