@@ -90,6 +90,8 @@ if [[ "${#GPU_ARRAY[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+echo "scheduler: dynamic queue over ${#GPU_ARRAY[@]} GPU slot(s)."
+
 compile_args=()
 if [[ "$COMPILE" == "1" || "$COMPILE" == "true" ]]; then
   compile_args+=(--compile)
@@ -101,34 +103,104 @@ if [[ "$OPTIMIZER" == "muon" ]]; then
 fi
 
 mkdir -p runs reports
-wave_pids=()
-wave_names=()
+active_pids=()
+active_names=()
+active_gpus=()
+available_gpus=("${GPU_ARRAY[@]}")
+released_name=""
+released_gpu=""
 
 cleanup() {
-  if [[ "${#wave_pids[@]}" -gt 0 ]]; then
-    echo "Stopping ${#wave_pids[@]} active run(s)..." >&2
-    kill "${wave_pids[@]}" 2>/dev/null || true
+  if [[ "${#active_pids[@]}" -gt 0 ]]; then
+    echo "Stopping ${#active_pids[@]} active run(s)..." >&2
+    kill "${active_pids[@]}" 2>/dev/null || true
   fi
 }
 
 trap cleanup INT TERM
 
-wait_wave() {
+release_active_pid() {
+  local pid="$1"
   local idx
-  for idx in "${!wave_pids[@]}"; do
-    if ! wait "${wave_pids[$idx]}"; then
-      echo "Run failed: ${wave_names[$idx]}" >&2
-      exit 1
+  for idx in "${!active_pids[@]}"; do
+    if [[ "${active_pids[$idx]}" == "$pid" ]]; then
+      released_name="${active_names[$idx]}"
+      released_gpu="${active_gpus[$idx]}"
+      unset 'active_pids[idx]' 'active_names[idx]' 'active_gpus[idx]'
+      set +u
+      active_pids=("${active_pids[@]}")
+      active_names=("${active_names[@]}")
+      active_gpus=("${active_gpus[@]}")
+      set -u
+      available_gpus+=("$released_gpu")
+      return 0
     fi
   done
-  wave_pids=()
-  wave_names=()
+  return 1
 }
 
-slot=0
+is_running_job() {
+  local pid="$1"
+  local running_pid
+  while IFS= read -r running_pid; do
+    if [[ "$running_pid" == "$pid" ]]; then
+      return 0
+    fi
+  done < <(jobs -pr)
+  return 1
+}
+
+wait_for_free_gpu() {
+  local finished_pid=""
+  local status=0
+  local idx pid
+
+  if [[ "${#active_pids[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  if help wait 2>/dev/null | grep -q -- "-p"; then
+    set +e
+    wait -n -p finished_pid "${active_pids[@]}"
+    status=$?
+    set -e
+
+    if [[ -z "$finished_pid" ]]; then
+      echo "A training process finished, but bash did not report its pid." >&2
+      exit 1
+    fi
+  else
+    while true; do
+      for idx in "${!active_pids[@]}"; do
+        pid="${active_pids[$idx]}"
+        if ! is_running_job "$pid"; then
+          finished_pid="$pid"
+          set +e
+          wait "$finished_pid"
+          status=$?
+          set -e
+          break 2
+        fi
+      done
+      sleep 5
+    done
+  fi
+
+  if ! release_active_pid "$finished_pid"; then
+    echo "Finished process ${finished_pid}, but it was not tracked by the launcher." >&2
+    exit 1
+  fi
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "Run failed: ${released_name}" >&2
+    exit "$status"
+  fi
+
+  echo "Finished ${released_name} on GPU ${released_gpu}."
+}
+
 for seed in "${SEED_ARRAY[@]}"; do
   for variant in "${VARIANT_ARRAY[@]}"; do
-    gpu="${GPU_ARRAY[$slot]}"
     run_name="${BASE_RUN}_seed${seed}_${variant}"
     run_dir="runs/block_residuals/${run_name}"
     log_path="runs/${run_name}.log"
@@ -139,6 +211,13 @@ for seed in "${SEED_ARRAY[@]}"; do
         continue
       fi
     fi
+
+    while [[ "${#available_gpus[@]}" -eq 0 ]]; do
+      wait_for_free_gpu
+    done
+
+    gpu="${available_gpus[0]}"
+    available_gpus=("${available_gpus[@]:1}")
 
     echo "Launching ${run_name} on GPU ${gpu}."
     PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES="$gpu" "$PYTHON_BIN" "$TRAIN_SCRIPT" \
@@ -177,18 +256,15 @@ for seed in "${SEED_ARRAY[@]}"; do
       "${compile_args[@]}" \
       > "$log_path" 2>&1 &
 
-    wave_pids+=("$!")
-    wave_names+=("$run_name")
-    slot=$((slot + 1))
-
-    if (( slot == ${#GPU_ARRAY[@]} )); then
-      wait_wave
-      slot=0
-    fi
+    active_pids+=("$!")
+    active_names+=("$run_name")
+    active_gpus+=("$gpu")
   done
 done
 
-wait_wave
+while [[ "${#active_pids[@]}" -gt 0 ]]; do
+  wait_for_free_gpu
+done
 
 "$PYTHON_BIN" experiments/topology_sweep/summarize_topology_sweep.py \
   "runs/block_residuals/${BASE_RUN}_seed*/summary.csv" \
