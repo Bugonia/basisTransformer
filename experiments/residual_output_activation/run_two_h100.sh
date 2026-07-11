@@ -4,7 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-PYTHON_BIN="${PYTHON_BIN:-.venv_cu128/bin/python}"
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  PYTHON_BIN="$PYTHON_BIN"
+elif [[ -x ".venv_cu128/bin/python" ]]; then
+  PYTHON_BIN=".venv_cu128/bin/python"
+elif [[ -x ".venv/bin/python" ]]; then
+  PYTHON_BIN=".venv/bin/python"
+else
+  PYTHON_BIN="python3"
+fi
 DATA_FILE="${DATA_FILE:-data/enwik8.txt}"
 ENCODING="${ENCODING:-latin-1}"
 OUT_DIR="${OUT_DIR:-runs/block_residuals}"

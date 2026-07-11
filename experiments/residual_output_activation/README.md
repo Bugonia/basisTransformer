@@ -77,7 +77,11 @@ two jobs and runs them sequentially.
 
 ```bash
 git pull origin main
-.venv_cu128/bin/python -m unittest tests.test_residual_output_activation
+python3 -m venv .venv
+.venv/bin/python -m pip install numpy
+.venv/bin/python -m pip install -r requirements-cu128.txt
+.venv/bin/python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.device_count())"
+.venv/bin/python -m unittest tests.test_residual_output_activation
 chmod +x experiments/residual_output_activation/run_two_h100.sh
 mkdir -p reports
 nohup env GPUS="0 1" SEEDS="1" \
