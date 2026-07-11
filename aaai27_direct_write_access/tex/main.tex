@@ -58,18 +58,21 @@ Attention and FFN computations; it is a dual-write system in which both modules
 retain direct residual-stream write access.
 
 We test this interpretation through controlled decoder-only language-modeling
-experiments on enwik8. Standard Attention-then-FFN blocks outperform parallel,
-order-reversed, block-composed, and carry variants. Crucially, carry variants
-give the removed module additional influence over coefficient generation but
-still deny it direct write access, and they remain substantially weaker than
-standard dual-write blocks. A complementary output-projection absorption control
-shows that an Attention output projection can be functionally redundant when it
-is not a direct residual write outlet, sharpening the distinction between
-parameterization and write access. These results support the view that direct
-write access is an architectural resource in Transformers and reframe residual
-streams as write economies: shared spaces where model quality depends on which
-heterogeneous basis families can directly write and how their dynamic
-coefficients are coupled.
+experiments on enwik8. In a five-seed, parameter-matched topology sweep,
+standard Attention-then-FFN blocks obtain the lowest test loss. Reversing order
+while preserving both direct write families causes only a small paired
+degradation ($+0.0145$ test NLL), whereas removing one direct write family is
+substantially more damaging: coefficient-only block variants degrade by
+$+0.0274$ to $+0.0560$, and carry variants remain weaker despite giving the
+removed module additional influence over coefficient generation. A
+complementary output-projection absorption control shows that an Attention
+output projection can be functionally redundant when it is not a direct
+residual write outlet, sharpening the distinction between parameterization and
+write access. These results support the view that direct write access is an
+architectural resource in Transformers and reframe residual streams as write
+economies: shared spaces where model quality depends on which heterogeneous
+basis families can directly write and how their dynamic coefficients are
+coupled.
 \end{abstract}
 
 \section{Introduction}
@@ -268,61 +271,75 @@ same tokenizer, context length, model width, depth, dropout, and optimization
 schedule unless explicitly noted. Checkpoints are selected by validation loss
 and evaluated once on the held-out test split. Unless otherwise stated, models
 use 8 layers, 8 heads, hidden size 512, context length 512, and batch size 256.
-We report validation and test loss; lower is better. The carry variants share
-weights between the current-state and previous-state branches, so their
-parameter counts remain matched to the corresponding block variants. They do,
-however, invoke one submodule twice per block. Thus their underperformance is
-not explained by receiving less computation than the standard dual-write block.
+The main sweep uses the Muon optimizer and five random seeds. All seven main
+variants have 25.6M trainable parameters. We report validation and test loss;
+lower is better. Paired deltas compare each variant with the standard block at
+the same seed and use two-sided 95\% $t$ intervals over the five paired
+differences. The carry variants share weights between the current-state and
+previous-state branches, so their parameter counts remain matched to the
+corresponding block variants. They do, however, invoke one submodule twice per
+block. Thus their underperformance is not explained by receiving less
+computation than the standard dual-write block.
 
 \paragraph{Basis-carry comparison.}
-Table~\ref{tab:basis-carry} shows the main basis-carry experiment. Reversing the
-standard AF order while keeping both direct write families causes a modest
-degradation. In contrast, carry variants remain much weaker even though they
-give the removed module additional coefficient influence through a previous
-middle signal.
+Table~\ref{tab:basis-carry} isolates the key carry comparison from the main
+five-seed sweep. Reversing the standard AF order while keeping both direct
+write families causes a modest degradation. In contrast, carry variants remain
+much weaker even though they give the removed module additional coefficient
+influence through a previous middle signal.
 
 \begin{table*}[t]
 \centering
-\caption{Basis-carry result on enwik8. Losing one direct write family is much
-more damaging than reversing sublayer order while preserving both direct write
-families. Results are mean $\pm$ sample standard deviation over two seeds.}
+\caption{Basis-carry result on enwik8 from the five-seed Muon sweep. Losing one
+direct write family is more damaging than reversing sublayer order while
+preserving both direct write families. Test losses are mean $\pm$ sample
+standard deviation; deltas are paired against the standard block.}
 \label{tab:basis-carry}
 \begin{tabular}{llllrr}
 \toprule
 Variant & Attn write & FFN write & Carry signal & Test loss $\downarrow$ & Delta $\downarrow$ \\
 \midrule
-standard & yes & yes & no & $0.8682 \pm 0.0035$ & $0.0000$ \\
-standard\_fa & yes & yes & no & $0.8806 \pm 0.0048$ & $+0.0124$ \\
-block\_af\_carry & no & yes & yes & $0.9296 \pm 0.0028$ & $+0.0613$ \\
-block\_fa\_carry & yes & no & yes & $0.9330 \pm 0.0069$ & $+0.0648$ \\
+standard & yes & yes & no & $0.8358 \pm 0.0027$ & $0.0000$ \\
+standard\_fa & yes & yes & no & $0.8503 \pm 0.0061$ & $+0.0145$ \\
+block\_af\_carry & no & yes & yes & $0.8617 \pm 0.0026$ & $+0.0259$ \\
+block\_fa\_carry & yes & no & yes & $0.8780 \pm 0.0070$ & $+0.0422$ \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
-\paragraph{Robustness under stronger optimization.}
-Table~\ref{tab:topology} reports a Muon-optimized topology sweep. Absolute gaps
-shrink compared with shorter AdamW runs, but the qualitative ordering remains:
-standard dual-write blocks are strongest, dual-write alternatives are closer
-than block variants, and carry does not close the gap.
+\paragraph{Five-seed topology sweep.}
+Table~\ref{tab:topology} reports the complete Muon-optimized topology sweep.
+All non-standard variants are worse than the standard block in all five paired
+seeds. The ordering matches the write-economy prediction. The closest variant
+is \texttt{standard\_fa}, which reverses order but preserves both direct write
+families. The parallel variant also preserves both direct writes but removes
+same-layer AF coefficient coupling, producing an intermediate gap. The
+block-composed variants, which turn one module into coefficient-only access,
+are much weaker. The asymmetry is also informative: in this setting, denying
+the FFN its direct write basis (\texttt{block\_fa}) is more damaging than
+denying Attention its direct write basis (\texttt{block\_af}).
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
-\caption{Topology sweep under a stronger optimization budget.}
+\caption{Five-seed topology sweep on enwik8 with 25.6M-parameter models. Test
+losses are mean $\pm$ sample standard deviation. Paired deltas and confidence
+intervals compare each variant to \texttt{standard} at the same seed. Every
+non-standard variant is worse than \texttt{standard} in all five paired seeds.}
 \label{tab:topology}
-\begin{tabular}{lrr}
+\begin{tabular}{lrrrr}
 \toprule
-Variant & Test loss $\downarrow$ & Delta $\downarrow$ \\
+Variant & Test NLL $\downarrow$ & Test bpc $\downarrow$ & $\Delta$ test NLL $\downarrow$ & $\Delta$ \% \\
 \midrule
-standard & 0.8363 & 0.0000 \\
-standard\_fa & 0.8509 & +0.0146 \\
-parallel & 0.8551 & +0.0188 \\
-block\_af & 0.8635 & +0.0272 \\
-block\_af\_carry & 0.8611 & +0.0248 \\
-block\_fa & 0.8872 & +0.0509 \\
-block\_fa\_carry & 0.8878 & +0.0515 \\
+standard & $0.8358 \pm 0.0027$ & $1.2058 \pm 0.0039$ & -- & -- \\
+standard\_fa & $0.8503 \pm 0.0061$ & $1.2268 \pm 0.0088$ & $+0.0145$ $[0.0086,0.0204]$ & $+1.74$ \\
+parallel & $0.8561 \pm 0.0024$ & $1.2350 \pm 0.0035$ & $+0.0202$ $[0.0186,0.0219]$ & $+2.42$ \\
+block\_af & $0.8632 \pm 0.0030$ & $1.2453 \pm 0.0043$ & $+0.0274$ $[0.0251,0.0297]$ & $+3.28$ \\
+block\_af\_carry & $0.8617 \pm 0.0026$ & $1.2432 \pm 0.0038$ & $+0.0259$ $[0.0248,0.0270]$ & $+3.10$ \\
+block\_fa & $0.8918 \pm 0.0055$ & $1.2866 \pm 0.0079$ & $+0.0560$ $[0.0502,0.0617]$ & $+6.70$ \\
+block\_fa\_carry & $0.8780 \pm 0.0070$ & $1.2667 \pm 0.0101$ & $+0.0422$ $[0.0330,0.0514]$ & $+5.05$ \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table*}
 
 \paragraph{Output-projection absorption control.}
 In a block-AF topology without an intervening nonlinearity or normalization

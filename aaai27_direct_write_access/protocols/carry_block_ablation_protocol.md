@@ -104,14 +104,13 @@ look intentional and reduce reviewer concern about seed noise.
 
 Current usable evidence:
 
-- AdamW 30k basis-carry run, two seeds.
-- Muon 100k topology sweep, two seeds.
+- Muon 100k topology sweep, five seeds, 7 variants, 25.6M matched parameters.
 - AdamW 100k `W_O` absorption control, two seeds.
+- AdamW 30k basis-carry run, two seeds, now treated as an earlier pilot.
 
-These results are strong enough for writing the story and checking that the
-hypotheses are plausible. For submission, the Muon topology sweep should be
-treated as the primary experiment and rerun with five seeds. The AdamW 30k run
-can move to appendix or be described as an earlier replication if space allows.
+The Muon five-seed topology sweep is the primary submission experiment. The
+AdamW 30k run should move to appendix or be described only as an earlier
+replication if space allows.
 
 ## Robustness and Controls
 

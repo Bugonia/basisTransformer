@@ -6,8 +6,8 @@
 - [ ] Main equation and notation table.
 - [ ] Figure 1: write-economy framework.
 - [ ] Figure 2: variant taxonomy.
-- [ ] Table 2: basis-carry result with mechanism columns.
-- [ ] Table 3: five-seed Muon topology sweep with paired deltas.
+- [x] Table 2: basis-carry result with mechanism columns.
+- [x] Table 3: five-seed Muon topology sweep with paired deltas.
 - [ ] Main ablation table reports parameter counts and compute indicators.
 - [ ] Table 4: open-model basis inventory.
 - [ ] One pretrained-model logit attribution case.

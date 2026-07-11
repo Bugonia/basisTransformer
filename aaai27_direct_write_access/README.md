@@ -91,13 +91,23 @@ focused:
 
 Existing evidence already available in the repository:
 
-- `standard` beats `parallel`, `block_af`, and `block_fa`.
+- The final enwik8 Muon topology sweep is complete: 7 variants x 5 seeds, with
+  25.6M matched parameters for every variant.
+- `standard` is best: test NLL `0.8358 +/- 0.0027` (`1.2058 +/- 0.0039`
+  bpc).
 - `parallel` keeps dual direct writes but weakens same-layer AF coefficient
-  coupling, giving an intermediate result.
+  coupling, giving an intermediate paired test degradation of `+0.0202`
+  (`+2.42%`, 95% CI `[0.0186, 0.0219]`).
 - `standard_fa` keeps dual direct writes but reverses order, producing only a
-  modest loss increase.
+  modest paired test degradation of `+0.0145` (`+1.74%`, 95% CI
+  `[0.0086, 0.0204]`).
 - `block_af_carry` and `block_fa_carry` preserve cross-module coefficient
-  modulation but remove one direct write family, producing much larger drops.
+  modulation but remove one direct write family, producing larger paired test
+  degradations of `+0.0259` and `+0.0422`, respectively.
+- Direct block-composed coefficient-only variants are weaker still:
+  `block_af` has paired test degradation `+0.0274`, while `block_fa` has
+  `+0.0560`.
+- Every non-standard variant is worse than `standard` in all five paired seeds.
 - `W_O` absorption shows that an output projection can be algebraically
   redundant when it is not a direct residual write outlet, sharpening the
   distinction between parameterization and write access.
