@@ -187,14 +187,8 @@ def apply_residual_output_activation(
     """Apply a parameter-free nonlinearity to a completed residual update."""
     if activation == "identity":
         return x
-    if activation == "relu":
-        return F.relu(x)
     if activation == "gelu":
         return F.gelu(x)
-    if activation == "silu":
-        return F.silu(x)
-    if activation == "tanh":
-        return torch.tanh(x)
     raise ValueError(f"Unsupported residual output activation: {activation!r}")
 
 
@@ -725,16 +719,9 @@ class Block(nn.Module):
             raise ValueError(f"Unknown variant {config.variant!r}")
         if config.norm not in ("pre", "post", "both", "none"):
             raise ValueError("norm must be 'pre', 'post', 'both', or 'none'")
-        if config.residual_output_activation not in (
-            "identity",
-            "relu",
-            "gelu",
-            "silu",
-            "tanh",
-        ):
+        if config.residual_output_activation not in ("identity", "gelu"):
             raise ValueError(
-                "residual_output_activation must be identity, relu, gelu, silu, "
-                "or tanh"
+                "residual_output_activation must be identity or gelu"
             )
         self.variant = config.variant
         self.residual_output_activation = config.residual_output_activation
@@ -1847,11 +1834,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--residual-output-activation",
-        choices=("identity", "relu", "gelu", "silu", "tanh"),
+        choices=("identity", "gelu"),
         default="gelu",
-        help="Parameter-free activation applied to completed Attention and/or "
-        "FFN residual updates in standard_act_* variants. 'identity' is an "
-        "exact-equivalence sanity control.",
+        help="GELU, matching the standard FFN nonlinearity, applied to completed "
+        "Attention and/or FFN residual updates in standard_act_* variants. "
+        "'identity' is an exact-equivalence sanity control.",
     )
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--bias", action=argparse.BooleanOptionalAction, default=True)

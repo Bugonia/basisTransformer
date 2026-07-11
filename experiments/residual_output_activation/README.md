@@ -23,17 +23,17 @@ standard_act_ffn:  h_{l+1} = u_l + phi(f_l)
 standard_act_both: both updates pass through phi
 ```
 
-The intervention adds no trainable parameters. `--residual-output-activation`
-selects `identity`, `relu`, `gelu`, `silu`, or `tanh`.
+The intervention adds no trainable parameters. It uses GELU, matching the
+nonlinearity already used inside the standard FFN. `identity` is retained only
+as an exact-equivalence sanity control.
 
 ## Why the site ablation matters
 
 - Attention and FFN output projections normally end linearly, so they can write
   signed updates into the residual stream.
-- ReLU removes the negative coordinates of a completed update and creates a
-  positive mean shift.
-- GELU and SiLU retain negative outputs only weakly and remain asymmetric.
-- Tanh preserves sign but bounds the magnitude of the update.
+- GELU changes the signed, linear output dictionary written by each module into
+  an asymmetric nonlinear update, while keeping the activation family matched
+  to the original FFN.
 - Attention-only and FFN-only variants reveal whether either residual writer is
   especially sensitive to a nonlinear output constraint.
 
@@ -63,47 +63,38 @@ python train_block_residuals.py \
   --dropout 0
 ```
 
-## Submission-scale enwik8 sweep
+## Two-H100 enwik8 sweep
 
-Use the same data split and Muon recipe as the existing topology sweep. Run at
-least five paired seeds.
+The recommended configuration for one node with two H100s is one independent
+training process per GPU. The model is small enough that DDP communication is
+unlikely to pay for itself; the GPUs instead evaluate different interventions
+in parallel. Keep one process on each GPU so throughput remains comparable
+across variants.
+
+For the requested single seed, the launcher runs four jobs: one standard
+baseline plus GELU at each of the three intervention sites. Each H100 receives
+two jobs and runs them sequentially.
 
 ```bash
-BASE_RUN=enwik8_residual_output_activation_muon_8l_512d
+git pull origin main
+.venv_cu128/bin/python -m unittest tests.test_residual_output_activation
+chmod +x experiments/residual_output_activation/run_two_h100.sh
+mkdir -p reports
+nohup env GPUS="0 1" SEEDS="1" \
+  bash experiments/residual_output_activation/run_two_h100.sh \
+  > reports/residual_output_activation_two_h100.log 2>&1 &
+```
 
-for activation in relu gelu silu tanh; do
-  for seed in 1 2 3 4 5; do
-    CUDA_VISIBLE_DEVICES=$(( (seed - 1) % 8 )) \
-      .venv_cu128/bin/python train_block_residuals.py \
-        --data-file data/enwik8.txt \
-        --encoding latin-1 \
-        --variant residual_output_activation \
-        --residual-output-activation "$activation" \
-        --run-name "${BASE_RUN}_${activation}_seed${seed}" \
-        --seed "$seed" \
-        --max-iters 100000 \
-        --eval-interval 1000 \
-        --eval-iters 20 \
-        --early-stop-patience 10 \
-        --val-frac 0.005 \
-        --test-frac 0.005 \
-        --n-layer 8 \
-        --n-head 8 \
-        --n-embd 512 \
-        --batch-size 256 \
-        --block-size 512 \
-        --optimizer muon \
-        --learning-rate 2e-3 \
-        --min-lr 2e-4 \
-        --adamw-fallback-learning-rate 2e-4 \
-        --warmup-iters 500 \
-        --lr-decay-iters 30000 \
-        --weight-decay 0.01 \
-        --dtype bfloat16 \
-        > "runs/${BASE_RUN}_${activation}_seed${seed}.log" 2>&1 &
-  done
-  wait
-done
+Defaults are the matched 8-layer, width-512, context-512, batch-256 Muon
+recipe, with BF16 and `torch.compile`. Training stops at 100,000 iterations or
+after ten validation checks without improvement. Existing completed jobs are
+skipped, so the same command can safely resume an interrupted sweep.
+
+Monitor it with
+
+```bash
+tail -f reports/residual_output_activation_two_h100.log
+nvidia-smi
 ```
 
 ## Primary comparisons

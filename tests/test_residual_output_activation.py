@@ -37,7 +37,7 @@ class ResidualOutputActivationTest(unittest.TestCase):
             actual = activated(x)
         torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
 
-    def test_activation_variants_preserve_shape_and_parameter_count(self) -> None:
+    def test_gelu_variants_preserve_shape_and_parameter_count(self) -> None:
         torch.manual_seed(11)
         standard = Block(make_config("standard")).eval()
         x = torch.randn(2, 8, 16)
@@ -47,14 +47,13 @@ class ResidualOutputActivationTest(unittest.TestCase):
             "standard_act_ffn",
             "standard_act_both",
         ):
-            for activation in ("relu", "gelu", "silu", "tanh"):
-                with self.subTest(variant=variant, activation=activation):
-                    block = Block(make_config(variant, activation)).eval()
-                    self.assertEqual(count_parameters(block), count_parameters(standard))
-                    with torch.no_grad():
-                        output = block(x)
-                    self.assertEqual(output.shape, x.shape)
-                    self.assertTrue(torch.isfinite(output).all())
+            with self.subTest(variant=variant):
+                block = Block(make_config(variant, "gelu")).eval()
+                self.assertEqual(count_parameters(block), count_parameters(standard))
+                with torch.no_grad():
+                    output = block(x)
+                self.assertEqual(output.shape, x.shape)
+                self.assertTrue(torch.isfinite(output).all())
 
 
 if __name__ == "__main__":
