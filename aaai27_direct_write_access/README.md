@@ -1,8 +1,8 @@
-# Paper 1: Direct Write Access Is an Architectural Resource
+# Paper 1: A Write-Economy View of Transformer Residual Blocks
 
 Working title:
 
-> Direct Write Access Is an Architectural Resource in Transformers
+> A Write-Economy View of Transformer Residual Blocks
 
 One-sentence argument:
 
@@ -114,11 +114,26 @@ Existing evidence already available in the repository:
 
 Needed new evidence:
 
+- rank-controlled direct-write intervention with matched coefficient-only
+  controls;
+- second dataset or model-scale validation;
 - pretrained open-model basis inventory;
 - module-level logit attribution on at least Pythia-70M/GPT-2 and preferably
   Qwen2.5-0.5B;
 - counterfactual write patching on one pretrained model, using clean/corrupt
   prompt activations rather than zeroing hidden-state contributions.
+
+Current safe wording:
+
+> The five-seed enwik8 topology sweep shows that the standard dual-residual
+> Transformer topology consistently outperforms the tested order-reversed,
+> parallel, block-composed, and carry variants. This is consistent with the
+> hypothesis that independent Attention and FFN residual outlets are useful,
+> but by itself it does not fully isolate direct write access from
+> normalization, composition-depth, Jacobian-path, or optimization effects.
+
+The next decisive experiment is the rank-controlled intervention in
+`protocols/rank_direct_write_intervention.md`.
 
 ## File Map
 

@@ -52,6 +52,15 @@ WO_ABSORPTION_VARIANTS = (
     "block_af_no_mid_ln",
     "block_af_no_mid_ln_no_wo",
 )
+RANK_WRITE_VARIANTS = (
+    "block_af_rank_write",
+    "block_fa_rank_write",
+)
+RANK_COEFF_VARIANTS = (
+    "block_af_rank_coeff",
+    "block_fa_rank_coeff",
+)
+RANK_INTERVENTION_VARIANTS = RANK_WRITE_VARIANTS + RANK_COEFF_VARIANTS
 ATTNRES_VARIANTS = (
     "standard_attnres_full",
     "standard_attnres_block",
@@ -107,9 +116,13 @@ VARIANTS = (
     "standard_attnres_full",
     "standard_attnres_block",
     "block_af",
+    "block_af_rank_write",
+    "block_af_rank_coeff",
     "block_af_no_mid_ln",
     "block_af_no_mid_ln_no_wo",
     "block_fa",
+    "block_fa_rank_write",
+    "block_fa_rank_coeff",
     "block_af_carry",
     "block_fa_carry",
     "parallel",
@@ -163,6 +176,8 @@ class ModelConfig:
     qk_band_mode: str = "learned"
     qk_band_scales: Optional[Tuple[float, ...]] = None
     attnres_n_blocks: int = 8
+    write_rank: int = 0
+    write_alpha: float = 1.0
     residual_output_activation: str = "gelu"
 
 
@@ -464,6 +479,30 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 
+class LowRankAdapter(nn.Module):
+    """Low-rank residual/coeff-path adapter for direct-write isolation tests."""
+
+    def __init__(self, n_embd: int, rank: int, alpha: float = 1.0):
+        super().__init__()
+        if rank < 0:
+            raise ValueError("rank must be non-negative")
+        self.rank = rank
+        self.alpha = alpha
+        if rank == 0:
+            self.down = None
+            self.up = None
+        else:
+            self.down = nn.Linear(n_embd, rank, bias=False)
+            self.up = nn.Linear(rank, n_embd, bias=False)
+            nn.init.zeros_(self.up.weight)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.rank == 0:
+            return torch.zeros_like(x)
+        assert self.down is not None and self.up is not None
+        return self.up(self.down(x)) * self.alpha
+
+
 class LayerNorm(nn.Module):
     """LayerNorm with configurable gamma shape."""
 
@@ -749,6 +788,11 @@ class Block(nn.Module):
             use_output_projection=use_wo,
         )
         self.ffn = FeedForward(config)
+        self.rank_adapter = (
+            LowRankAdapter(config.n_embd, config.write_rank, config.write_alpha)
+            if config.variant in RANK_INTERVENTION_VARIANTS
+            else None
+        )
 
     def _token_scale(
         self,
@@ -832,6 +876,26 @@ class Block(nn.Module):
             a = self.attn(self.n1(x, token_ids))
             return self.p2(x + self.ffn(self.n2(a, token_ids)), token_ids)
 
+        if self.variant == "block_af_rank_write":
+            # Same coefficient path as block_af, plus a matched low-rank direct
+            # Attention write into the residual stream.
+            assert self.rank_adapter is not None
+            a = self.attn(self.n1(x, token_ids))
+            return self.p2(
+                x + self.rank_adapter(a) + self.ffn(self.n2(a, token_ids)),
+                token_ids,
+            )
+
+        if self.variant == "block_af_rank_coeff":
+            # Same extra low-rank adapter as block_af_rank_write, but it only
+            # changes the FFN coefficient input and does not write directly.
+            assert self.rank_adapter is not None
+            a = self.attn(self.n1(x, token_ids))
+            return self.p2(
+                x + self.ffn(self.n2(a + self.rank_adapter(a), token_ids)),
+                token_ids,
+            )
+
         if self.variant == "block_af_no_mid_ln":
             # h_next = h + FFN(Attn(LN(h))). No LN/dropout-removable nonlinear op
             # is inserted between the attention output projection and FFN.
@@ -848,6 +912,26 @@ class Block(nn.Module):
             # h_next = h + Attn(FFN(h)); with optional Pre-LN around each submodule.
             f = self.ffn(self.n1(x, token_ids))
             return self.p2(x + self.attn(self.n2(f, token_ids)), token_ids)
+
+        if self.variant == "block_fa_rank_write":
+            # Same coefficient path as block_fa, plus a matched low-rank direct
+            # FFN write into the residual stream.
+            assert self.rank_adapter is not None
+            f = self.ffn(self.n1(x, token_ids))
+            return self.p2(
+                x + self.rank_adapter(f) + self.attn(self.n2(f, token_ids)),
+                token_ids,
+            )
+
+        if self.variant == "block_fa_rank_coeff":
+            # Same extra low-rank adapter as block_fa_rank_write, but it only
+            # changes the Attention coefficient input and does not write directly.
+            assert self.rank_adapter is not None
+            f = self.ffn(self.n1(x, token_ids))
+            return self.p2(
+                x + self.attn(self.n2(f + self.rank_adapter(f), token_ids)),
+                token_ids,
+            )
 
         if self.variant == "block_af_carry":
             prev = torch.zeros_like(x) if prev_x is None else prev_x
@@ -1424,6 +1508,11 @@ def train_one_variant(
                 f"attnres: block | depth_steps: {total_steps} | "
                 f"target_blocks: {target_blocks} | steps_per_block: {steps_per_block}"
             )
+    if variant in RANK_INTERVENTION_VARIANTS:
+        print(
+            f"rank intervention: write_rank={model_config.write_rank} | "
+            f"write_alpha={model_config.write_alpha:g}"
+        )
     with log_path.open("w", encoding="utf-8") as log_file:
         for iter_num in range(args.max_iters + 1):
             if iter_num % args.eval_interval == 0 or iter_num == args.max_iters:
@@ -1527,6 +1616,8 @@ def train_one_variant(
             if variant == "standard_attnres_block"
             else ""
         ),
+        "write_rank": model_config.write_rank,
+        "write_alpha": model_config.write_alpha,
         "sequence_mixer": sequence_mixer_for_variant(variant),
         "ffn_kind": ffn_kind_for_variant(variant),
         "attention_gate": attention_gate_for_variant(variant),
@@ -1581,6 +1672,8 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
         "qk_band_mode",
         "qk_band_scales",
         "attnres_n_blocks",
+        "write_rank",
+        "write_alpha",
         "sequence_mixer",
         "ffn_kind",
         "attention_gate",
@@ -1741,6 +1834,18 @@ def parse_args() -> argparse.Namespace:
         "attention+FFN pair.",
     )
     parser.add_argument(
+        "--write-rank",
+        type=int,
+        default=0,
+        help="Low-rank adapter rank for *_rank_write and *_rank_coeff variants.",
+    )
+    parser.add_argument(
+        "--write-alpha",
+        type=float,
+        default=1.0,
+        help="Scale for low-rank adapter output in rank intervention variants.",
+    )
+    parser.add_argument(
         "--residual-output-activation",
         choices=("identity", "relu", "gelu", "silu", "tanh"),
         default="gelu",
@@ -1797,6 +1902,8 @@ def main() -> None:
         raise SystemExit("--n-unique-layers cannot exceed --n-layer")
     if args.attnres_n_blocks < 1:
         raise SystemExit("--attnres-n-blocks must be at least 1")
+    if args.write_rank < 0:
+        raise SystemExit("--write-rank must be non-negative")
     if args.n_embd % args.n_head != 0:
         raise SystemExit("--n-embd must be divisible by --n-head")
     head_dim = args.n_embd // args.n_head
@@ -1863,6 +1970,8 @@ def main() -> None:
         qk_band_mode=args.qk_band_mode,
         qk_band_scales=qk_band_scales,
         attnres_n_blocks=args.attnres_n_blocks,
+        write_rank=args.write_rank,
+        write_alpha=args.write_alpha,
         residual_output_activation=args.residual_output_activation,
     )
     if args.variant == "all":

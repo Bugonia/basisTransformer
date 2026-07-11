@@ -94,7 +94,7 @@ Exit criterion:
 
 Recommended order:
 
-1. `Direct Write Access Is an Architectural Resource`
+1. `A Write-Economy View of Transformer Residual Blocks`
 2. `Basis-Level Attribution for Transformer Predictions`
 3. `Coefficient Trajectories Reveal Hidden Computation Paths`
 4. `Grounding and Hallucination as Basis-Support Mismatch`

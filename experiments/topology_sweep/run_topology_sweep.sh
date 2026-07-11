@@ -68,6 +68,8 @@ DROPOUT="${DROPOUT:-0.1}"
 DTYPE="${DTYPE:-bfloat16}"
 COMPILE="${COMPILE:-0}"
 RESUME="${RESUME:-1}"
+WRITE_RANK="${WRITE_RANK:-0}"
+WRITE_ALPHA="${WRITE_ALPHA:-1.0}"
 
 if [[ "$OPTIMIZER" != "adamw" && "$OPTIMIZER" != "muon" ]]; then
   echo "Unknown OPTIMIZER='${OPTIMIZER}'. Expected adamw or muon." >&2
@@ -91,6 +93,8 @@ if [[ "${#GPU_ARRAY[@]}" -eq 0 ]]; then
 fi
 
 echo "scheduler: dynamic queue over ${#GPU_ARRAY[@]} GPU slot(s)."
+echo "write_rank: $WRITE_RANK"
+echo "write_alpha: $WRITE_ALPHA"
 
 compile_args=()
 if [[ "$COMPILE" == "1" || "$COMPILE" == "true" ]]; then
@@ -252,6 +256,8 @@ for seed in "${SEED_ARRAY[@]}"; do
       --muon-momentum "$MUON_MOMENTUM" \
       --muon-ns-steps "$MUON_NS_STEPS" \
       "${fallback_args[@]}" \
+      --write-rank "$WRITE_RANK" \
+      --write-alpha "$WRITE_ALPHA" \
       --dtype "$DTYPE" \
       "${compile_args[@]}" \
       > "$log_path" 2>&1 &

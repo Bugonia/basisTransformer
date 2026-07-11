@@ -2,7 +2,7 @@
 
 Current target:
 
-> Submit `Direct Write Access Is an Architectural Resource in Transformers` to
+> Submit `A Write-Economy View of Transformer Residual Blocks` to
 > AAAI-27.
 
 Hard deadlines:

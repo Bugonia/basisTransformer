@@ -90,16 +90,17 @@ List the paper's concrete contributions.
 
 Draft:
 
-> Our contributions are fourfold. First, we introduce a basis/coefficient
-> formalism that separates direct residual write access from coefficient
-> modulation in Transformer blocks. Second, we derive the Attention and FFN
-> write-basis families for standard decoder-only Transformers and show how their
-> coefficients depend on residual history. Third, we provide controlled
-> language-modeling experiments showing that dual direct write access explains a
-> substantial part of the standard block advantage, beyond ordering and
-> optimization effects. Fourth, we extend the framework toward pretrained open
-> models through basis inventory, logit attribution, and counterfactual
-> write-patching diagnostics.
+> Our contributions are threefold. First, we formulate Transformer residual
+> updates in terms of architecturally fixed write outlets and dynamic
+> coefficients, separating direct residual write access from coefficient
+> modulation. Second, we derive the Attention and FFN write-outlet families for
+> standard decoder-only Transformers and show how their coefficients depend on
+> residual history. Third, we provide controlled language-modeling experiments
+> showing that the standard dual-residual topology is consistently stronger than
+> the tested order-reversed, parallel, block-composed, and carry variants under a
+> matched five-seed setting. We treat pretrained-model attribution and
+> counterfactual write patching as necessary follow-up evidence rather than as
+> completed contributions in the present draft.
 
 ## Paragraph 6: Implication and Boundary
 

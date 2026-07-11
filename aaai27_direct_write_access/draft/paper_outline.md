@@ -2,17 +2,17 @@
 
 ## Title Options
 
-1. Direct Write Access Is an Architectural Resource in Transformers
-2. Residual Write Access Explains the Advantage of Dual-Residual Transformer Blocks
+1. A Write-Economy View of Transformer Residual Blocks
+2. Direct Residual Write Outlets in Transformer Blocks
 3. Basis Families and Coefficient Coupling in Transformer Residual Streams
-4. Transformer Sublayers Need Direct Residual Write Access
+4. Rank-Controlled Tests of Residual Write Access
 
 Recommended title:
 
-> Direct Write Access Is an Architectural Resource in Transformers
+> A Write-Economy View of Transformer Residual Blocks
 
-It is concrete, claim-bearing, and readable to architecture and interpretability
-reviewers.
+It is concrete and readable while avoiding a stronger causal claim than the
+current evidence supports.
 
 ## Abstract Shape
 
@@ -65,12 +65,16 @@ Thesis:
 
 Contributions:
 
-1. A basis/coefficient formalism for direct residual writes.
-2. A controlled architecture test separating direct write access from
-   coefficient modulation.
-3. Empirical evidence that dual direct write access explains a substantial part
-   of the standard block advantage.
-4. Open-model diagnostic tools for basis-level logit attribution.
+1. A basis/coefficient framing of architecturally fixed residual write outlets
+   and dynamic coefficient generators.
+2. A derivation of Attention and FFN write-outlet families in decoder-only
+   Transformers.
+3. A controlled five-seed topology sweep showing that the standard
+   dual-residual topology consistently outperforms the tested order-reversed,
+   parallel, block-composed, and carry variants.
+4. A planned rank-controlled direct-write intervention and pretrained
+   counterfactual patching package needed to turn the topology result into a
+   stronger causal mechanism claim.
 
 ### 2. Residual Streams as Write Economies
 
@@ -195,6 +199,7 @@ Limitations:
 
 Close with:
 
-> Direct residual write access is not an implementation detail of Transformer
-> blocks; it is an architectural resource that determines which learned
-> direction families can directly shape the model's computation.
+> The controlled topology sweep is consistent with the hypothesis that
+> independent Attention and FFN residual outlets are useful architectural
+> resources, while also identifying the rank-controlled and pretrained-model
+> interventions needed to isolate that hypothesis more cleanly.

@@ -19,6 +19,8 @@ SUMMARY_COLUMNS = [
     "optimizer",
     "norm",
     "norm_kind",
+    "write_rank",
+    "write_alpha",
     "parameters",
     "best_val_loss",
     "test_loss",
@@ -108,6 +110,8 @@ def load_rows(patterns: Sequence[str]) -> List[Dict[str, str]]:
                     row["batch_size"] = str(config.get("batch_size", ""))
                     row["max_iters"] = str(config.get("max_iters", ""))
                     row["learning_rate"] = str(config.get("learning_rate", ""))
+                    row["write_rank"] = str(config.get("write_rank", ""))
+                    row["write_alpha"] = str(config.get("write_alpha", ""))
                     row["dataset_key"] = str(
                         config.get("data_file") or config.get("dataset") or ""
                     )
@@ -121,20 +125,33 @@ def variant_order(name: str) -> Tuple[int, str]:
         "standard_fa": 1,
         "parallel": 2,
         "block_af": 3,
-        "block_fa": 4,
-        "block_af_carry": 5,
-        "block_fa_carry": 6,
+        "block_af_rank_write": 4,
+        "block_af_rank_coeff": 5,
+        "block_fa": 6,
+        "block_fa_rank_write": 7,
+        "block_fa_rank_coeff": 8,
+        "block_af_carry": 9,
+        "block_fa_carry": 10,
     }
     return order.get(name, 99), name
 
 
 def aggregate(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    grouped: Dict[Tuple[str, str, str, str], List[Dict[str, str]]] = defaultdict(list)
+    grouped: Dict[Tuple[str, str, str, str, str, str], List[Dict[str, str]]] = defaultdict(list)
     for row in rows:
-        grouped[(row["variant"], row["optimizer"], row["norm"], row["norm_kind"])].append(row)
+        grouped[
+            (
+                row["variant"],
+                row["optimizer"],
+                row["norm"],
+                row["norm_kind"],
+                row.get("write_rank", ""),
+                row.get("write_alpha", ""),
+            )
+        ].append(row)
 
     out: List[Dict[str, str]] = []
-    for (variant, optimizer, norm, norm_kind), group in sorted(
+    for (variant, optimizer, norm, norm_kind, write_rank, write_alpha), group in sorted(
         grouped.items(), key=lambda item: variant_order(item[0][0])
     ):
         out.append(
@@ -143,6 +160,8 @@ def aggregate(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
                 "optimizer": optimizer,
                 "norm": norm,
                 "norm_kind": norm_kind,
+                "write_rank": write_rank,
+                "write_alpha": write_alpha,
                 "parameters": summarize_int(safe_float(r.get("parameters")) for r in group),
                 "best_val_loss": summarize(safe_float(r.get("best_val_loss")) for r in group),
                 "test_loss": summarize(safe_float(r.get("test_loss")) for r in group),
@@ -169,6 +188,8 @@ def pair_key(row: Dict[str, str]) -> Tuple[str, ...]:
         row.get("batch_size", ""),
         row.get("max_iters", ""),
         row.get("learning_rate", ""),
+        row.get("write_rank", ""),
+        row.get("write_alpha", ""),
         row.get("dataset_key", ""),
     )
 

@@ -7,7 +7,7 @@ Start date:
 Goal:
 
 - by 2026-08-08, produce a complete top-conference-style manuscript for
-  `Direct Write Access Is an Architectural Resource in Transformers`.
+  `A Write-Economy View of Transformer Residual Blocks`.
 
 ## Week 1: Lock the Argument and Baseline Evidence
 

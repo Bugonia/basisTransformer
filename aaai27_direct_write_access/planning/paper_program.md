@@ -39,7 +39,7 @@ Minimum evidence:
 - contrast with final hidden-state distance;
 - case studies for correct vs wrong or grounded vs unsupported answers.
 
-## Paper 3: Direct Write Access Is an Architectural Resource
+## Paper 3: A Write-Economy View of Transformer Residual Blocks
 
 Claim:
 
@@ -77,4 +77,3 @@ Minimum evidence:
 - ordinary SAE baseline;
 - architectural-basis-constrained SAE;
 - reconstruction, sparsity, interpretability, and causal ablation comparison.
-

@@ -98,4 +98,4 @@ ACTIVE_BOARD.md
 
 Working title:
 
-> Direct Write Access Is an Architectural Resource in Transformers
+> A Write-Economy View of Transformer Residual Blocks

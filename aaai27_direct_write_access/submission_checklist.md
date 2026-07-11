@@ -9,6 +9,9 @@
 - [x] Table 2: basis-carry result with mechanism columns.
 - [x] Table 3: five-seed Muon topology sweep with paired deltas.
 - [ ] Main ablation table reports parameter counts and compute indicators.
+- [ ] Rank-controlled direct-write intervention with matched coefficient-only
+  controls.
+- [ ] Second dataset or model-scale replication for the main topology trend.
 - [ ] Table 4: open-model basis inventory.
 - [ ] One pretrained-model logit attribution case.
 - [ ] One counterfactual write-patching case showing attribution is not merely
@@ -52,7 +55,8 @@ Risk:
 
 Response:
 
-- emphasize carry controls and basis/coefficient distinction.
+- emphasize carry controls and basis/coefficient distinction; strongest answer
+  requires the rank-controlled direct-write intervention.
 
 Risk:
 
@@ -60,8 +64,19 @@ Risk:
 
 Response:
 
-- include pretrained open-model basis inventory, logit attribution, and
-  counterfactual write patching.
+- include a second dataset or scale check, plus pretrained open-model basis
+  inventory, logit attribution, and counterfactual write patching.
+
+Risk:
+
+- "Direct write access is not isolated from normalization and optimization
+  effects."
+
+Response:
+
+- run `block_af/block_fa` rank-write versus rank-coeff matched controls, where
+  both sides add the same low-rank adapter and differ only in whether the
+  adapter writes directly to the residual stream.
 
 Risk:
 
