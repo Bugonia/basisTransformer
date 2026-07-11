@@ -36,6 +36,17 @@ TINY_SHAKESPEARE_URL = (
 )
 LEGACY_VARIANTS = ("standard", "block_af", "block_fa", "parallel")
 BASIS_VARIANTS = ("standard", "standard_fa", "block_af_carry", "block_fa_carry")
+RESIDUAL_OUTPUT_ACTIVATION_VARIANTS = (
+    "standard_act_attn",
+    "standard_act_ffn",
+    "standard_act_both",
+)
+RESIDUAL_OUTPUT_ACTIVATION_SUITE = (
+    "standard",
+    "standard_act_attn",
+    "standard_act_ffn",
+    "standard_act_both",
+)
 WO_ABSORPTION_VARIANTS = (
     "block_af",
     "block_af_no_mid_ln",
@@ -65,6 +76,9 @@ HADAMARD_MIXER_VARIANTS = (
 )
 STANDARD_TRANSFORMER_VARIANTS = (
     "standard",
+    "standard_act_attn",
+    "standard_act_ffn",
+    "standard_act_both",
     "standard_swiglu",
     "standard_gated_attn",
     "standard_swiglu_gated_attn",
@@ -77,6 +91,9 @@ STANDARD_TRANSFORMER_VARIANTS = (
 )
 VARIANTS = (
     "standard",
+    "standard_act_attn",
+    "standard_act_ffn",
+    "standard_act_both",
     "standard_swiglu",
     "standard_gated_attn",
     "standard_swiglu_gated_attn",
@@ -146,6 +163,24 @@ class ModelConfig:
     qk_band_mode: str = "learned"
     qk_band_scales: Optional[Tuple[float, ...]] = None
     attnres_n_blocks: int = 8
+    residual_output_activation: str = "gelu"
+
+
+def apply_residual_output_activation(
+    x: torch.Tensor, activation: str
+) -> torch.Tensor:
+    """Apply a parameter-free nonlinearity to a completed residual update."""
+    if activation == "identity":
+        return x
+    if activation == "relu":
+        return F.relu(x)
+    if activation == "gelu":
+        return F.gelu(x)
+    if activation == "silu":
+        return F.silu(x)
+    if activation == "tanh":
+        return torch.tanh(x)
+    raise ValueError(f"Unsupported residual output activation: {activation!r}")
 
 
 class CausalSelfAttention(nn.Module):
@@ -651,7 +686,19 @@ class Block(nn.Module):
             raise ValueError(f"Unknown variant {config.variant!r}")
         if config.norm not in ("pre", "post", "both", "none"):
             raise ValueError("norm must be 'pre', 'post', 'both', or 'none'")
+        if config.residual_output_activation not in (
+            "identity",
+            "relu",
+            "gelu",
+            "silu",
+            "tanh",
+        ):
+            raise ValueError(
+                "residual_output_activation must be identity, relu, gelu, silu, "
+                "or tanh"
+            )
         self.variant = config.variant
+        self.residual_output_activation = config.residual_output_activation
         self.norm_scale = config.norm_scale
         self.pre_norm = config.norm in ("pre", "both")
         self.post_norm = config.norm in ("post", "both")
@@ -757,9 +804,19 @@ class Block(nn.Module):
         token_ids: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if self.variant in STANDARD_TRANSFORMER_VARIANTS:
-            x = x + self.attn(self.n1(x, token_ids))
+            a = self.attn(self.n1(x, token_ids))
+            if self.variant in ("standard_act_attn", "standard_act_both"):
+                a = apply_residual_output_activation(
+                    a, self.residual_output_activation
+                )
+            x = x + a
             x = self.p1(x, token_ids)
-            x = x + self.ffn(self.n2(x, token_ids))
+            f = self.ffn(self.n2(x, token_ids))
+            if self.variant in ("standard_act_ffn", "standard_act_both"):
+                f = apply_residual_output_activation(
+                    f, self.residual_output_activation
+                )
+            x = x + f
             x = self.p2(x, token_ids)
             return x
 
@@ -1339,6 +1396,11 @@ def train_one_variant(
             f"ffn: {ffn_kind_for_variant(variant)} | "
             f"attention_gate: {attention_gate_for_variant(variant)}"
         )
+    if variant in RESIDUAL_OUTPUT_ACTIVATION_VARIANTS:
+        print(
+            "residual output activation: "
+            f"{model_config.residual_output_activation}"
+        )
     qk_message = f"qk_score: {model_config.qk_score}"
     if model_config.qk_score == "band":
         qk_message += (
@@ -1468,6 +1530,11 @@ def train_one_variant(
         "sequence_mixer": sequence_mixer_for_variant(variant),
         "ffn_kind": ffn_kind_for_variant(variant),
         "attention_gate": attention_gate_for_variant(variant),
+        "residual_output_activation": (
+            model_config.residual_output_activation
+            if variant in RESIDUAL_OUTPUT_ACTIVATION_VARIANTS
+            else ""
+        ),
         "final_train_loss": final_losses["train"],
         "final_val_loss": final_losses["val"],
         "best_val_loss": best_val,
@@ -1517,6 +1584,7 @@ def write_summary(path: Path, rows: List[Dict[str, float | int | str]]) -> None:
         "sequence_mixer",
         "ffn_kind",
         "attention_gate",
+        "residual_output_activation",
         "final_train_loss",
         "final_val_loss",
         "best_val_loss",
@@ -1545,10 +1613,19 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--variant",
-        choices=("all", "basis", "wo_absorption", "all_variants") + VARIANTS,
+        choices=(
+            "all",
+            "basis",
+            "wo_absorption",
+            "residual_output_activation",
+            "all_variants",
+        )
+        + VARIANTS,
         default="all",
         help="'all' runs the legacy four variants; 'basis' runs the new basis "
         "suite; 'wo_absorption' compares block-AF variants with/without W_O; "
+        "'residual_output_activation' compares activation after Attention/FFN "
+        "residual updates; "
         "'all_variants' runs every implemented variant.",
     )
     parser.add_argument(
@@ -1662,6 +1739,14 @@ def parse_args() -> argparse.Namespace:
         help="Target number of depth blocks for standard_attnres_block. "
         "With 8 Transformer blocks this defaults to one AttnRes block per "
         "attention+FFN pair.",
+    )
+    parser.add_argument(
+        "--residual-output-activation",
+        choices=("identity", "relu", "gelu", "silu", "tanh"),
+        default="gelu",
+        help="Parameter-free activation applied to completed Attention and/or "
+        "FFN residual updates in standard_act_* variants. 'identity' is an "
+        "exact-equivalence sanity control.",
     )
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--bias", action=argparse.BooleanOptionalAction, default=True)
@@ -1778,6 +1863,7 @@ def main() -> None:
         qk_band_mode=args.qk_band_mode,
         qk_band_scales=qk_band_scales,
         attnres_n_blocks=args.attnres_n_blocks,
+        residual_output_activation=args.residual_output_activation,
     )
     if args.variant == "all":
         variants = list(LEGACY_VARIANTS)
@@ -1785,6 +1871,8 @@ def main() -> None:
         variants = list(BASIS_VARIANTS)
     elif args.variant == "wo_absorption":
         variants = list(WO_ABSORPTION_VARIANTS)
+    elif args.variant == "residual_output_activation":
+        variants = list(RESIDUAL_OUTPUT_ACTIVATION_SUITE)
     elif args.variant == "all_variants":
         variants = list(VARIANTS)
     else:
