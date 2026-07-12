@@ -93,6 +93,23 @@ standard_attnres_block   0.8212     0.8375      257k
 standard_attnres_full    0.8227     0.8374      163k
 ```
 
+## enwik8 residual-output GELU, Muon, single-seed screening run
+
+- Folder:
+  [`enwik8_residual_output_activation_gelu_muon_8l_512d_ctx512_bs256_seed1_100k_earlystop10`](enwik8_residual_output_activation_gelu_muon_8l_512d_ctx512_bs256_seed1_100k_earlystop10/)
+- Main result: applying GELU only to the completed Attention update gives the
+  best validation and test loss. Applying GELU only after the FFN is worse than
+  the baseline; applying it at both sites gives a smaller gain at substantially
+  greater training cost. This is a one-seed screening result.
+
+```text
+variant              best val   test loss   delta vs standard   best iter
+standard             0.8211     0.8333       0.0000             43000
+standard_act_attn    0.8166     0.8275      -0.0057             61000
+standard_act_both    0.8191     0.8312      -0.0020             95000
+standard_act_ffn     0.8218     0.8361      +0.0028             61000
+```
+
 ## enwik8 standard component ablation, Muon, optimizer-sweep budget
 
 - Folder:

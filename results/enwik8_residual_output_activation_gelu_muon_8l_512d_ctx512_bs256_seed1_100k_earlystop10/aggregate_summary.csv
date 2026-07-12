@@ -1,0 +1,5 @@
+variant,n,parameters_mean,parameters_std,best_val_loss_mean,best_val_loss_std,test_loss_mean,test_loss_std,final_val_loss_mean,final_val_loss_std,best_iter_mean,best_iter_std,elapsed_sec_mean,elapsed_sec_std,tokens_per_sec_mean,tokens_per_sec_std
+standard,1,25587200,0,0.8211,0,0.8333,0,0.8212,0,43000,0,5508.4812,0,1258661,0
+standard_act_attn,1,25587200,0,0.8166,0,0.8275,0,0.8168,0,61000,0,7459.9684,0,1246478,0
+standard_act_both,1,25587200,0,0.8191,0,0.8312,0,0.8206,0,95000,0,10743.4127,0,1219979,0
+standard_act_ffn,1,25587200,0,0.8218,0,0.8361,0,0.8220,0,61000,0,7503.6374,0,1239645,0

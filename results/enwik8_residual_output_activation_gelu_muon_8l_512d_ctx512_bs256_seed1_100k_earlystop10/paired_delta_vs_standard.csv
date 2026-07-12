@@ -1,0 +1,4 @@
+seed,variant,best_val_loss_delta_vs_standard,test_loss_delta_vs_standard
+1,standard_act_attn,-0.0045,-0.0057
+1,standard_act_both,-0.0020,-0.0020
+1,standard_act_ffn,0.0007,0.0028
