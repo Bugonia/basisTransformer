@@ -62,16 +62,18 @@ experiments on enwik8. In a five-seed, parameter-matched topology sweep,
 standard Attention-then-FFN blocks obtain the lowest test loss. Reversing order
 while preserving both direct write families causes only a small paired
 degradation ($+0.0145$ test NLL), whereas removing one direct write family is
-substantially more damaging: coefficient-only block variants degrade by
-$+0.0274$ to $+0.0560$, and carry variants remain weaker despite giving the
-removed module additional influence over coefficient generation. A
-complementary output-projection absorption control is consistent with a
-distinction between a projection as an internal parameterization and as a
-residual write outlet. These results do not by themselves isolate direct write
-access from all normalization and optimization-path effects, but they support a
-write-economy hypothesis: residual streams are shared spaces where model
-quality depends on which heterogeneous modules can write directly and how their
-dynamic coefficients are coupled.
+substantially more damaging. We then run a rank-controlled intervention: the
+same rank-16 adapter is either added as a direct residual write or inserted
+only into the next module's coefficient path. Restoring a low-rank FFN direct
+write outlet improves over the matched coefficient-only control by $0.0220$
+test NLL in all five seeds, while the analogous Attention-side intervention
+does not help. The resulting picture is module-asymmetric rather than a simple
+``direct writes always help'' claim: FFN outputs behave more like learned
+residual-space basis banks that benefit from direct write access, whereas
+Attention outputs are more effective as context-dependent routers for
+downstream coefficients. This suggests problem-facing uses of the framework for
+write-aware parameter-efficient adaptation, knowledge editing, continual
+learning, steering, and residual-block design.
 \end{abstract}
 
 \section{Introduction}
@@ -133,7 +135,7 @@ pass additional intermediate signals across layers, giving the removed module a
 stronger role in coefficient generation, but they still do not restore its
 direct write basis.
 
-Our contributions are threefold. First, we formulate Transformer residual
+Our contributions are fourfold. First, we formulate Transformer residual
 updates in terms of architecturally fixed write outlets and dynamic
 coefficients, separating direct residual write access from coefficient
 modulation. Second, we derive the Attention and FFN write-outlet families for
@@ -141,9 +143,13 @@ standard decoder-only Transformers and show how their coefficients depend on
 residual history. Third, we provide controlled language-modeling experiments
 showing that the standard dual-residual topology is consistently stronger than
 the tested order-reversed, parallel, block-composed, and carry variants under a
-matched five-seed setting. We treat pretrained-model attribution and
-counterfactual write patching as necessary follow-up evidence rather than as
-completed contributions in the present draft.
+matched five-seed setting. Fourth, we introduce a rank-controlled direct-write
+intervention showing that restoring a low-rank FFN residual outlet is far more
+useful than an equal-rank coefficient-only control, whereas the Attention-side
+effect is absent or reversed. We treat pretrained-model attribution,
+parameter-efficient adaptation, and write-aware continual-learning experiments
+as necessary follow-up evidence rather than as completed contributions in the
+present draft.
 
 \section{Residual Streams as Write Economies}
 
@@ -351,6 +357,74 @@ block\_fa\_carry & $0.8780 \pm 0.0070$ & $1.2667 \pm 0.0101$ & $+0.0422$ $[0.033
 \end{tabular}
 \end{table*}
 
+\paragraph{Rank-controlled direct-write intervention.}
+The topology sweep supports the write-economy hypothesis, but it also changes
+normalization placement, sublayer composition, and optimization paths. We
+therefore ran a more local intervention. Starting from a block-composed
+topology, we add the same low-rank adapter
+\begin{equation}
+A_r(z)=\alpha U_rV_rz,\quad r=16,
+\end{equation}
+with the output matrix $U_r$ zero-initialized. In the \emph{rank-write}
+condition, $A_r$ is added directly to the residual update. In the matched
+\emph{rank-coeff} control, the same adapter is inserted only into the next
+module's coefficient input. Thus the comparison controls parameter count and
+low-rank computation while changing whether the adapter receives a direct
+residual write outlet.
+
+For the AF side, the comparison is
+\begin{align}
+\mathrm{AF\mbox{-}write}:&\quad
+h' = h + A_r(a) + \FFN(\LN(a)),\\
+\mathrm{AF\mbox{-}coeff}:&\quad
+h' = h + \FFN(\LN(a + A_r(a))),
+\end{align}
+where $a=\Attn(\LN(h))$. For the FA side, the analogous comparison uses
+$f=\FFN(\LN(h))$:
+\begin{align}
+\mathrm{FA\mbox{-}write}:&\quad
+h' = h + A_r(f) + \Attn(\LN(f)),\\
+\mathrm{FA\mbox{-}coeff}:&\quad
+h' = h + \Attn(\LN(f + A_r(f))).
+\end{align}
+
+Table~\ref{tab:rank-write} shows that direct write access is
+module-asymmetric. Adding a low-rank direct outlet to FFN outputs closes a
+large part of the \texttt{block\_fa} gap and strongly outperforms the
+coefficient-only control. The matched test-loss difference
+\texttt{block\_fa\_rank\_write} $-$ \texttt{block\_fa\_rank\_coeff} is
+$-0.0220$ with 95\% CI $[-0.0249,-0.0191]$, and the write condition is better
+in all five seeds. The Attention-side intervention does not show the same
+effect: \texttt{block\_af\_rank\_write} is statistically indistinguishable
+from the \texttt{block\_af} baseline and slightly worse than the
+coefficient-path control. This sharpens the interpretation of the topology
+sweep. The important missing resource in \texttt{block\_fa} is not merely an
+extra low-rank transformation of the FFN output; it is the ability of that
+transformation to write directly to the residual stream.
+
+\begin{table*}[t]
+\centering
+\caption{Rank-controlled direct-write intervention on enwik8. All rank
+variants add the same rank-16 adapter and have matched parameter counts within
+each side. Deltas are paired test-loss differences; negative is better. The
+FFN-side direct write intervention strongly outperforms its coefficient-only
+control, whereas the Attention-side direct write intervention does not.}
+\label{tab:rank-write}
+\begin{tabular}{llrrr}
+\toprule
+Side & Variant & Test NLL $\downarrow$ & $\Delta$ vs block & Write $-$ coeff \\
+\midrule
+AF & block\_af & $0.8626 \pm 0.0031$ & -- & -- \\
+AF & block\_af\_rank\_write & $0.8623 \pm 0.0029$ & $-0.0003$ $[-0.0019,0.0013]$ & $+0.0019$ $[-0.0005,0.0043]$ \\
+AF & block\_af\_rank\_coeff & $0.8604 \pm 0.0027$ & $-0.0022$ $[-0.0040,-0.0004]$ & -- \\
+\midrule
+FA & block\_fa & $0.8854 \pm 0.0037$ & -- & -- \\
+FA & block\_fa\_rank\_write & $0.8532 \pm 0.0032$ & $-0.0322$ $[-0.0342,-0.0302]$ & $-0.0220$ $[-0.0249,-0.0191]$ \\
+FA & block\_fa\_rank\_coeff & $0.8751 \pm 0.0037$ & $-0.0102$ $[-0.0128,-0.0077]$ & -- \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
 \paragraph{Output-projection absorption control.}
 In a block-AF topology without an intervening nonlinearity or normalization
 between Attention and FFN, the Attention output projection $W_O$ can be absorbed
@@ -465,6 +539,19 @@ steering study learned or discovered directions in residual space
 basis view is complementary: it identifies write dictionaries already present
 in the model's parameterization.
 
+\paragraph{Model editing and parameter-efficient adaptation.}
+Knowledge-neuron, ROME, and MEMIT-style work edits factual associations by
+targeting localized Transformer computations, often in MLP/FFN layers
+\citep{dai2022knowledge,meng2022locating,meng2023mass}. Low-rank adaptation
+adds trainable low-rank updates to pretrained weights for efficient
+fine-tuning \citep{hu2022lora}. These methods intervene on parameters, but the
+choice of intervention site is usually described by module name or empirical
+effect. The write-economy view suggests a more structural axis: an update can
+change a coefficient generator, a direct residual write outlet, or both. Our
+rank-controlled experiment is a small from-scratch analogue of this choice and
+suggests that FFN-side direct residual outlets are a particularly important
+target for future adaptation and editing methods.
+
 \section{Discussion and Limitations}
 
 The results suggest that residual connections should not be viewed only as
@@ -473,9 +560,45 @@ persistent computational state. In a simple residual MLP or convolutional
 network, this allocation may be dominated by a single output dictionary per
 block. Transformers expose a richer version of the same phenomenon: multiple
 heterogeneous modules write to the same residual stream, and model quality
-depends on which of them retain direct write outlets. For the model scales
-studied here, Attention and FFN benefit from retaining separate, heterogeneous
-direct write outlets.
+depends on which of them retain direct write outlets. The rank-controlled
+experiment adds an important qualification. Direct write access is not a
+uniform scalar resource. Restoring a low-rank direct outlet to FFN outputs is
+far more valuable than inserting the same adapter into the Attention
+coefficient path, whereas restoring a low-rank direct outlet to Attention
+outputs does not improve over a coefficient-path control. This supports a
+role-asymmetric interpretation: FFNs behave more like learned residual-space
+write dictionaries, while Attention behaves more like a context-dependent
+router that selects and modulates subsequent computations.
+
+\paragraph{Problem-facing implications.}
+This role asymmetry is the most promising way to turn the framework from a
+mechanistic analysis into a method-building tool. First, parameter-efficient
+fine-tuning can be made write-aware. Standard low-rank adapters or LoRA modules
+are usually placed by architectural convention. A write-aware variant would
+distinguish adapters that only alter coefficient generation from adapters that
+create direct residual outlets, and would test whether FFN-outlet adapters
+provide better adaptation or retention at the same rank. Second, knowledge
+editing and continual learning can be phrased as basis-versus-coefficient
+control. If factual recall relies on a sparse support of FFN write directions,
+then editing, freezing, or regularizing those directions is different from
+editing the key/coefficient detector that activates them. This gives a concrete
+route to reducing catastrophic forgetting: protect high-footprint FFN write
+bases while allowing coefficient-side adaptation. Third, steering and safety
+interventions can move from single global activation vectors to
+basis-supported controls. A refusal, hallucination, or style behavior could be
+described by the layer/module/write-basis support that raises the relevant
+logits, then steered by changing the corresponding coefficients or outlets.
+Fourth, architecture design can be described in terms of write-basis budgets:
+parameter sharing and looped Transformers reuse write outlets across depth,
+whereas MoE layers conditionally expand the FFN write-basis bank.
+
+Among these directions, write-aware adaptation is the most direct next paper:
+the current rank-controlled experiment already implements the core primitive.
+A follow-up can attach low-rank adapters to pretrained small open models and
+compare direct residual-outlet adapters with coefficient-path adapters under
+equal parameter counts, measuring downstream adaptation, retained language
+modeling quality, and factual retention. Such a study would move the
+write-economy view from explanatory evidence to an actionable design rule.
 
 This perspective also gives a common language for residual enhancements and
 alternatives. Branch gates, residual scaling rules, and normalization changes
@@ -503,27 +626,31 @@ multiple write families cleanly. We do not claim to have experimentally
 characterized residual write economies in convolutional networks or residual
 MLPs. Second, the controlled experiments use relatively small models on enwik8,
 so the paper does not claim a complete scaling law for large language models or
-a modern subword language-modeling benchmark. Third, the current topology sweep
-does not uniquely isolate direct write access from all changes in normalization
-placement, composition depth, Jacobian paths, and optimization geometry. A
-stronger causal test would vary the rank or capacity of a direct residual
-outlet while keeping coefficient pathways and compute-matched controls fixed.
-Fourth, the term ``basis'' means an overcomplete learned write dictionary, not
-a linearly independent or identifiable basis. Finally, pretrained open-model
-attribution and intervention experiments are necessary to strengthen the
-connection between the controlled architecture results and deployed language
-models.
+a modern subword language-modeling benchmark. Third, the topology sweep changes
+multiple factors at once, including normalization placement, composition depth,
+Jacobian paths, and optimization geometry. The rank-controlled intervention is
+cleaner, but it is still limited to rank 16, from-scratch training, and one
+small language-modeling setting. Fourth, the term ``basis'' means an
+overcomplete learned write dictionary, not a linearly independent or
+identifiable basis. Finally, pretrained open-model attribution, write-aware
+adapter experiments, and continual-learning or editing evaluations are
+necessary to show that the proposed intervention axis improves deployed models
+rather than only explaining controlled toy-scale architectures.
 
 \section{Conclusion}
 
 We used a basis/coefficient view of residual updates to distinguish direct
 write access from coefficient-only modulation. In the controlled Transformer
 language models studied here, the standard dual-residual topology is
-consistently stronger than the tested alternatives that reverse order, remove
-same-layer coupling, or make one module coefficient-only. These results are
-consistent with the hypothesis that independent Attention and FFN residual
-outlets are useful architectural resources, while also identifying the next
-experiments needed to isolate that hypothesis more cleanly.
+consistently stronger than alternatives that reverse order, remove same-layer
+coupling, or make one module coefficient-only. A rank-controlled intervention
+then shows that restoring a low-rank FFN residual outlet is much more useful
+than an equal-rank coefficient-only control, while the analogous Attention-side
+intervention does not help. The resulting write-economy view is therefore not
+only a mechanism story about residual streams. It is a candidate design
+principle for adaptation, editing, steering, and future residual-block
+architectures: decide not only what computation to add, but whether it receives
+the right to write directly into the model's persistent state.
 
 \bibliography{references}
 

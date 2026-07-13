@@ -1,0 +1,26 @@
+{
+  "model_id": "EleutherAI/pythia-160m",
+  "old_calibration_file": "/inspire/hdd/global_user/zhongxiaoqiu-253108120179/data/wikitext103.txt",
+  "old_eval_file": "/inspire/hdd/global_user/zhongxiaoqiu-253108120179/data/wikitext103.txt",
+  "new_train_file": "/inspire/hdd/global_user/zhongxiaoqiu-253108120179/data/fineweb_edu_100m.txt",
+  "output_dir": "aaai27_residual_write_protection/results/pythia160m_pilot",
+  "inventory": {
+    "max_tokens": 131072,
+    "block_size": 512,
+    "batch_size": 4,
+    "top_k_per_layer": 64,
+    "activation_threshold": 0.01
+  },
+  "training": {
+    "rank": 8,
+    "alpha": 16.0,
+    "learning_rate": 0.0002,
+    "max_steps": 1000,
+    "batch_size": 4,
+    "block_size": 512,
+    "protect_lambda": 1.0,
+    "eval_interval": 100,
+    "eval_batches": 20
+  }
+}
+
