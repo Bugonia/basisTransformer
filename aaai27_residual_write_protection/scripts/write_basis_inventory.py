@@ -52,6 +52,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-k-per-layer", type=int, default=64)
     parser.add_argument("--activation-threshold", type=float, default=0.01)
     parser.add_argument("--footprint-chunk-size", type=int, default=128)
+    parser.add_argument(
+        "--footprint-device",
+        choices=("auto", "cpu", "cuda"),
+        default="auto",
+        help="Device for vocabulary-footprint matrix products.",
+    )
     parser.add_argument("--skip-footprint", action="store_true")
     parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument(
@@ -130,7 +136,7 @@ def sanitize_token(text: str) -> str:
     return text.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
 
 
-def compute_footprints(torch, model, tokenizer, basis, chunk_size: int):
+def compute_footprints(torch, model, tokenizer, basis, chunk_size: int, footprint_device: str):
     output_embeddings = model.get_output_embeddings()
     if output_embeddings is None:
         n = basis.shape[0]
@@ -140,19 +146,28 @@ def compute_footprints(torch, model, tokenizer, basis, chunk_size: int):
             torch.full((n,), float("nan")),
             [""] * n,
         )
-    unembed = output_embeddings.weight.detach().float().cpu()
+    if footprint_device == "auto":
+        device = output_embeddings.weight.device
+    elif footprint_device == "cuda" and not torch.cuda.is_available():
+        print("CUDA footprint requested but unavailable; using CPU.")
+        device = torch.device("cpu")
+    else:
+        device = torch.device(footprint_device)
+
+    unembed = output_embeddings.weight.detach().float().to(device)
     norms = []
     top_ids = []
     top_scores = []
     top_tokens: List[str] = []
     for start in range(0, basis.shape[0], chunk_size):
-        chunk = basis[start : start + chunk_size]
+        chunk = basis[start : start + chunk_size].to(device)
         scores = chunk @ unembed.t()
-        norms.append(scores.norm(dim=1))
+        norms.append(scores.norm(dim=1).cpu())
         values, ids = scores.max(dim=1)
-        top_ids.append(ids)
-        top_scores.append(values)
-        top_tokens.extend(sanitize_token(tokenizer.decode([int(idx)])) for idx in ids)
+        ids_cpu = ids.cpu()
+        top_ids.append(ids_cpu)
+        top_scores.append(values.cpu())
+        top_tokens.extend(sanitize_token(tokenizer.decode([int(idx)])) for idx in ids_cpu)
     return (
         torch.cat(norms),
         torch.cat(top_ids),
@@ -298,6 +313,7 @@ def main() -> None:
                 tokenizer,
                 directions,
                 args.footprint_chunk_size,
+                args.footprint_device,
             )
 
         importance = mean_abs * footprint_norm

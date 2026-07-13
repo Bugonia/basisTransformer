@@ -22,6 +22,11 @@ if [[ "$LOCAL_FILES_ONLY" == "1" || "$LOCAL_FILES_ONLY" == "true" ]]; then
   local_args+=(--local-files-only)
 fi
 
+footprint_args=(--footprint-device "${FOOTPRINT_DEVICE:-auto}")
+if [[ "${SKIP_FOOTPRINT:-0}" == "1" || "${SKIP_FOOTPRINT:-0}" == "true" ]]; then
+  footprint_args+=(--skip-footprint)
+fi
+
 mkdir -p "$BASE_OUT"
 
 echo "model: $MODEL_ID"
@@ -39,7 +44,9 @@ if [[ ! -s "$BASE_OUT/inventory/protected_subspaces.pt" ]]; then
     --max-tokens "${INVENTORY_MAX_TOKENS:-131072}" \
     --block-size "${BLOCK_SIZE:-512}" \
     --batch-size "${BATCH_SIZE:-4}" \
+    --footprint-chunk-size "${FOOTPRINT_CHUNK_SIZE:-128}" \
     --top-k-per-layer "${TOP_K_PER_LAYER:-64}" \
+    "${footprint_args[@]}" \
     "${local_args[@]}"
 fi
 

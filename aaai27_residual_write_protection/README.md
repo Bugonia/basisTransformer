@@ -94,12 +94,17 @@ For a fast smoke test, override:
 
 ```bash
 export INVENTORY_MAX_TOKENS=4096
+export SKIP_FOOTPRINT=1
 export MAX_STEPS=2
 export EVAL_INTERVAL=1
 export EVAL_BATCHES=1
 export BATCH_SIZE=1
 bash aaai27_residual_write_protection/scripts/run_pilot_pythia160m.sh
 ```
+
+The first run creates `inventory/protected_subspaces.pt`. Later runs with the
+same `BASE_OUT` reuse that file and skip inventory unless you remove the
+inventory directory or choose a new output directory.
 
 ## Directory Map
 
