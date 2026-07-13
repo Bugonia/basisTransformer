@@ -132,6 +132,49 @@ def main() -> None:
             f"overlap={pm(row['overlap_final'] for row in group)}"
         )
 
+    baseline_by_seed = {
+        row["seed"]: row for row in rows if row["method"] == "standard_lora"
+    }
+    paired_methods = sorted(
+        method for method in {row["method"] for row in rows} if method != "standard_lora"
+    )
+    if paired_methods and baseline_by_seed:
+        print("\npaired_vs_standard_lora")
+        print(
+            "method,n,old_final_delta,old_drift_delta,new_final_delta,"
+            "new_gain_delta,old_better,new_better"
+        )
+        for method in paired_methods:
+            group = [
+                row
+                for row in rows
+                if row["method"] == method and row["seed"] in baseline_by_seed
+            ]
+            old_final_delta = [
+                row["old_loss_final"] - baseline_by_seed[row["seed"]]["old_loss_final"]
+                for row in group
+            ]
+            old_drift_delta = [
+                row["old_loss_drift"] - baseline_by_seed[row["seed"]]["old_loss_drift"]
+                for row in group
+            ]
+            new_final_delta = [
+                row["new_loss_final"] - baseline_by_seed[row["seed"]]["new_loss_final"]
+                for row in group
+            ]
+            new_gain_delta = [
+                row["new_loss_gain"] - baseline_by_seed[row["seed"]]["new_loss_gain"]
+                for row in group
+            ]
+            old_better = sum(delta < 0 for delta in old_final_delta)
+            new_better = sum(delta < 0 for delta in new_final_delta)
+            print(
+                f"{method},{len(group)},{pm(old_final_delta)},"
+                f"{pm(old_drift_delta)},{pm(new_final_delta)},"
+                f"{pm(new_gain_delta)},{old_better}/{len(group)},"
+                f"{new_better}/{len(group)}"
+            )
+
     if args.output:
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -144,4 +187,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

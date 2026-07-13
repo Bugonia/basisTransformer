@@ -40,6 +40,12 @@ echo "old: $OLD_FILE"
 echo "new: $NEW_FILE"
 echo "out: $BASE_OUT"
 echo "token cache: $TOKEN_CACHE_DIR"
+echo "seeds: $SEEDS"
+echo "rank/alpha: $RANK/$ALPHA"
+echo "tokens: inventory=${INVENTORY_MAX_TOKENS:-131072} train=${MAX_TRAIN_TOKENS:-2000000} eval=${MAX_EVAL_TOKENS:-262144}"
+echo "train: steps=${MAX_STEPS:-1000} batch=${BATCH_SIZE:-4} block=${BLOCK_SIZE:-512} lr=${LEARNING_RATE:-2e-4}"
+echo "eval: interval=${EVAL_INTERVAL:-100} batches=${EVAL_BATCHES:-20} seed=${EVAL_SEED:-1234}"
+echo "protection: lambda=$PROTECT_LAMBDA hard_project=${HARD_PROJECT:-0} skip_footprint=${SKIP_FOOTPRINT:-0}"
 
 if [[ ! -s "$BASE_OUT/inventory/protected_subspaces.pt" ]]; then
   "$PYTHON_BIN" aaai27_residual_write_protection/scripts/write_basis_inventory.py \
