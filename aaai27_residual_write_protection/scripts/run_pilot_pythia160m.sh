@@ -22,6 +22,11 @@ if [[ "$LOCAL_FILES_ONLY" == "1" || "$LOCAL_FILES_ONLY" == "true" ]]; then
   local_args+=(--local-files-only)
 fi
 
+hard_args=()
+if [[ "${HARD_PROJECT:-0}" == "1" || "${HARD_PROJECT:-0}" == "true" ]]; then
+  hard_args+=(--hard-project)
+fi
+
 footprint_args=(--footprint-device "${FOOTPRINT_DEVICE:-auto}")
 if [[ "${SKIP_FOOTPRINT:-0}" == "1" || "${SKIP_FOOTPRINT:-0}" == "true" ]]; then
   footprint_args+=(--skip-footprint)
@@ -62,12 +67,18 @@ for seed in $SEEDS; do
     --dtype "$DTYPE" \
     --rank "$RANK" \
     --alpha "$ALPHA" \
+    --dropout "${DROPOUT:-0.0}" \
+    --learning-rate "${LEARNING_RATE:-2e-4}" \
+    --weight-decay "${WEIGHT_DECAY:-0.0}" \
     --seed "$seed" \
     --max-steps "${MAX_STEPS:-1000}" \
     --batch-size "${BATCH_SIZE:-4}" \
     --block-size "${BLOCK_SIZE:-512}" \
     --eval-interval "${EVAL_INTERVAL:-100}" \
     --eval-batches "${EVAL_BATCHES:-20}" \
+    --eval-seed "${EVAL_SEED:-1234}" \
+    --max-train-tokens "${MAX_TRAIN_TOKENS:-2000000}" \
+    --max-eval-tokens "${MAX_EVAL_TOKENS:-262144}" \
     --chars-per-token-budget "${CHARS_PER_TOKEN_BUDGET:-8}" \
     "${local_args[@]}"
 
@@ -81,15 +92,22 @@ for seed in $SEEDS; do
     --dtype "$DTYPE" \
     --rank "$RANK" \
     --alpha "$ALPHA" \
+    --dropout "${DROPOUT:-0.0}" \
+    --learning-rate "${LEARNING_RATE:-2e-4}" \
+    --weight-decay "${WEIGHT_DECAY:-0.0}" \
     --seed "$seed" \
     --max-steps "${MAX_STEPS:-1000}" \
     --batch-size "${BATCH_SIZE:-4}" \
     --block-size "${BLOCK_SIZE:-512}" \
     --eval-interval "${EVAL_INTERVAL:-100}" \
     --eval-batches "${EVAL_BATCHES:-20}" \
+    --eval-seed "${EVAL_SEED:-1234}" \
+    --max-train-tokens "${MAX_TRAIN_TOKENS:-2000000}" \
+    --max-eval-tokens "${MAX_EVAL_TOKENS:-262144}" \
     --chars-per-token-budget "${CHARS_PER_TOKEN_BUDGET:-8}" \
     --protected-subspaces "$BASE_OUT/inventory/protected_subspaces.pt" \
     --protect-lambda "$PROTECT_LAMBDA" \
+    "${hard_args[@]}" \
     "${local_args[@]}"
 done
 

@@ -93,6 +93,7 @@ bash aaai27_residual_write_protection/scripts/run_pilot_pythia160m.sh
 For a fast smoke test, override:
 
 ```bash
+export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_smoke_fast"
 export INVENTORY_MAX_TOKENS=4096
 export CHARS_PER_TOKEN_BUDGET=8
 export SKIP_FOOTPRINT=1
@@ -107,8 +108,14 @@ The first run creates `inventory/protected_subspaces.pt`. Later runs with the
 same `BASE_OUT` reuse that file and skip inventory unless you remove the
 inventory directory or choose a new output directory.
 
-Start the formal pilot only after this smoke test finishes in a few minutes.
-The first formal pass should still be conservative:
+The smoke test only checks that model loading, inventory construction, LoRA
+installation, fixed-batch evaluation, and summarization run end to end. It is
+not evidence for or against the residual-write-protection claim. With two
+steps, the LoRA output basis is still close to zero, so soft protection is
+expected to behave almost identically to standard LoRA.
+
+Start the first sanity pilot only after this smoke test finishes in a few
+minutes. Keep it conservative and deterministic:
 
 ```bash
 export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_pilot_r8_200step"
@@ -119,6 +126,14 @@ export EVAL_INTERVAL=50
 export EVAL_BATCHES=10
 export BATCH_SIZE=2
 export SEEDS="1 2 3"
+bash aaai27_residual_write_protection/scripts/run_pilot_pythia160m.sh
+```
+
+Then run the hard-projection counterpart in a separate output directory:
+
+```bash
+export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_pilot_r8_200step_hard"
+export HARD_PROJECT=1
 bash aaai27_residual_write_protection/scripts/run_pilot_pythia160m.sh
 ```
 

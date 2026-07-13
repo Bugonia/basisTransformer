@@ -38,6 +38,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--block-size", type=int, default=512)
     parser.add_argument("--eval-interval", type=int, default=100)
     parser.add_argument("--eval-batches", type=int, default=20)
+    parser.add_argument(
+        "--eval-seed",
+        type=int,
+        default=1234,
+        help="Seed used to pre-sample fixed evaluation batches.",
+    )
     parser.add_argument("--max-train-tokens", type=int, default=2000000)
     parser.add_argument("--max-eval-tokens", type=int, default=262144)
     parser.add_argument(
@@ -92,21 +98,47 @@ def read_tokens(tokenizer, path: str, max_tokens: int, chars_per_token_budget: i
     return ids[: max_tokens + 1]
 
 
-def random_batch(torch, token_ids, batch_size: int, block_size: int, device: str):
+def random_batch(torch, token_ids, batch_size: int, block_size: int, device: str, generator=None):
     max_start = token_ids.numel() - block_size - 1
     if max_start <= 0:
         raise ValueError("Not enough tokens for one batch.")
-    starts = torch.randint(0, max_start, (batch_size,))
-    x = torch.stack([token_ids[s : s + block_size] for s in starts], dim=0)
+    starts = torch.randint(0, max_start, (batch_size,), generator=generator)
+    x = torch.stack(
+        [token_ids[int(s) : int(s) + block_size] for s in starts],
+        dim=0,
+    )
     return x.to(device)
 
 
-def eval_loss(torch, model, token_ids, batch_size: int, block_size: int, batches: int, device: str) -> float:
+def make_eval_batches(
+    torch,
+    token_ids,
+    batch_size: int,
+    block_size: int,
+    batches: int,
+    device: str,
+    seed: int,
+):
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(seed)
+    return [
+        random_batch(
+            torch,
+            token_ids,
+            batch_size,
+            block_size,
+            device,
+            generator=generator,
+        )
+        for _ in range(max(1, batches))
+    ]
+
+
+def eval_loss(model, batches) -> float:
     model.eval()
     losses = []
     with torch.no_grad():
-        for _ in range(batches):
-            x = random_batch(torch, token_ids, batch_size, block_size, device)
+        for x in batches:
             out = model(input_ids=x, labels=x)
             losses.append(float(out.loss.detach().cpu()))
     model.train()
@@ -309,6 +341,24 @@ def main() -> None:
         args.max_eval_tokens,
         args.chars_per_token_budget,
     )
+    old_eval_batches = make_eval_batches(
+        torch,
+        old_eval_ids,
+        args.batch_size,
+        args.block_size,
+        args.eval_batches,
+        device,
+        args.eval_seed,
+    )
+    new_eval_batches = make_eval_batches(
+        torch,
+        new_eval_ids,
+        args.batch_size,
+        args.block_size,
+        args.eval_batches,
+        device,
+        args.eval_seed + 1,
+    )
 
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
@@ -342,24 +392,8 @@ def main() -> None:
 
     start = time.time()
     last_train_loss = float("nan")
-    initial_old_loss = eval_loss(
-        torch,
-        model,
-        old_eval_ids,
-        args.batch_size,
-        args.block_size,
-        args.eval_batches,
-        device,
-    )
-    initial_new_loss = eval_loss(
-        torch,
-        model,
-        new_eval_ids,
-        args.batch_size,
-        args.block_size,
-        args.eval_batches,
-        device,
-    )
+    initial_old_loss = eval_loss(model, old_eval_batches)
+    initial_new_loss = eval_loss(model, new_eval_batches)
     initial_row = {
         "step": 0,
         "train_loss": last_train_loss,
@@ -393,24 +427,8 @@ def main() -> None:
         last_train_loss = float(out.loss.detach().cpu())
 
         if step == 1 or step % args.eval_interval == 0 or step == args.max_steps:
-            old_loss = eval_loss(
-                torch,
-                model,
-                old_eval_ids,
-                args.batch_size,
-                args.block_size,
-                args.eval_batches,
-                device,
-            )
-            new_loss = eval_loss(
-                torch,
-                model,
-                new_eval_ids,
-                args.batch_size,
-                args.block_size,
-                args.eval_batches,
-                device,
-            )
+            old_loss = eval_loss(model, old_eval_batches)
+            new_loss = eval_loss(model, new_eval_batches)
             row = {
                 "step": step,
                 "train_loss": last_train_loss,
