@@ -8,6 +8,7 @@ PYTHON_BIN="${PYTHON_BIN:-python}"
 MODEL_ID="${MODEL_ID:-EleutherAI/pythia-160m}"
 OLD_FILE="${OLD_FILE:-${GLOBAL:-}/data/wikitext103.txt}"
 NEW_FILE="${NEW_FILE:-${GLOBAL:-}/data/fineweb_edu_100m.txt}"
+NEW_EVAL_FILE="${NEW_EVAL_FILE:-$NEW_FILE}"
 BASE_OUT="${BASE_OUT:-aaai27_residual_write_protection/results/pythia160m_pilot}"
 SEEDS="${SEEDS:-1 2 3}"
 RANK="${RANK:-8}"
@@ -38,6 +39,7 @@ mkdir -p "$BASE_OUT"
 echo "model: $MODEL_ID"
 echo "old: $OLD_FILE"
 echo "new: $NEW_FILE"
+echo "new eval: $NEW_EVAL_FILE"
 echo "out: $BASE_OUT"
 echo "token cache: $TOKEN_CACHE_DIR"
 echo "seeds: $SEEDS"
@@ -70,7 +72,7 @@ for seed in $SEEDS; do
     --model-id "$MODEL_ID" \
     --train-file "$NEW_FILE" \
     --old-eval-file "$OLD_FILE" \
-    --new-eval-file "$NEW_FILE" \
+    --new-eval-file "$NEW_EVAL_FILE" \
     --output-dir "$BASE_OUT/standard_seed${seed}" \
     --device "$DEVICE" \
     --dtype "$DTYPE" \
@@ -96,7 +98,7 @@ for seed in $SEEDS; do
     --model-id "$MODEL_ID" \
     --train-file "$NEW_FILE" \
     --old-eval-file "$OLD_FILE" \
-    --new-eval-file "$NEW_FILE" \
+    --new-eval-file "$NEW_EVAL_FILE" \
     --output-dir "$BASE_OUT/protected_seed${seed}" \
     --device "$DEVICE" \
     --dtype "$DTYPE" \

@@ -40,9 +40,14 @@ Use three data roles:
 Recommended first data:
 
 - old: WikiText-103 or FineWeb-Edu sample already prepared on the server;
-- new: factoid memorization set or a small domain file such as biomedical/legal
-  snippets;
+- new: controlled factoid memorization set, because it creates a clearer
+  new-knowledge write pressure than weak general-domain continuation;
 - optional factual retention: CounterFact/zsRE-style prompts.
+
+The WikiText -> FineWeb-Edu setting is now treated as an engineering sanity
+check. It validates tokenization, fixed evaluation, LoRA installation, and
+hard write-space projection, but its forgetting signal is too weak for the main
+paper claim.
 
 ## Step 1: Write-Basis Inventory
 
@@ -112,7 +117,7 @@ Next baselines:
 Adaptation:
 
 - new-domain validation loss;
-- target fact accuracy if using factoids.
+- target fact answer NLL and exact/prefix match if using factoids.
 
 Retention:
 
@@ -148,4 +153,3 @@ Negative result:
 If negative, the next question becomes whether our importance score is wrong,
 whether the protected subspace is too small/large, or whether forgetting occurs
 mostly through coefficient/routing rather than FFN write directions.
-

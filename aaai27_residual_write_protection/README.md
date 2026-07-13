@@ -144,6 +144,52 @@ bash aaai27_residual_write_protection/scripts/run_pilot_pythia160m.sh
 If that shows a retention/adaptation signal, run the full-footprint inventory
 with `FOOTPRINT_DEVICE=cuda` and longer training.
 
+### Controlled Factoid Main Pilot
+
+The WikiText -> FineWeb-Edu run is only an engineering sanity check. The current
+main experiment uses synthetic factoids as the new adaptation task, so the
+paper can measure new knowledge write-in and old-domain retention together.
+
+Soft protection:
+
+```bash
+source /inspire/hdd/global_user/zhongxiaoqiu-253108120179/basis_env.sh
+source "$GLOBAL/envs/basis-transformer-cu128/bin/activate"
+cd "$PROJECT_HOME"
+
+export PYTHON_BIN="$GLOBAL/envs/basis-transformer-cu128/bin/python"
+export MODEL_ID="EleutherAI/pythia-160m"
+export LOCAL_FILES_ONLY=1
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+
+export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_factoid_soft_r8_500step"
+export FACT_SEED=1
+export FACT_NUM_TRAIN=512
+export FACT_SEEN_EVAL=128
+export FACT_TRAIN_REPEATS=16
+
+export HARD_PROJECT=0
+export MAX_STEPS=500
+export EVAL_INTERVAL=100
+export EVAL_BATCHES=20
+export BATCH_SIZE=2
+export SEEDS="1 2 3"
+
+bash aaai27_residual_write_protection/scripts/run_factoid_pythia160m.sh
+```
+
+Hard projection:
+
+```bash
+export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_factoid_hard_r8_500step"
+export HARD_PROJECT=1
+bash aaai27_residual_write_protection/scripts/run_factoid_pythia160m.sh
+```
+
+The runner writes `summary.csv` for old/new text losses and
+`fact_eval_seen.csv` for answer-level factoid metrics.
+
 ## Directory Map
 
 - `protocols/pilot_protocol.md`: first experimental protocol.
@@ -151,4 +197,7 @@ with `FOOTPRINT_DEVICE=cuda` and longer training.
 - `scripts/write_basis_inventory.py`: compute FFN write-direction importance.
 - `scripts/train_write_protected_lora.py`: lightweight LoRA training with a
   write-subspace penalty.
+- `scripts/make_factoid_corpus.py`: generate controlled new-knowledge facts.
+- `scripts/eval_factoid_lora.py`: evaluate saved LoRA adapters on fact prompts.
+- `scripts/run_factoid_pythia160m.sh`: end-to-end factoid pilot runner.
 - `configs/pilot_pythia160m.json`: editable starter config.
