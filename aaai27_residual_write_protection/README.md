@@ -44,7 +44,27 @@ Run:
 
 ## Server Quickstart
 
-On the Inspire environment after activating the existing project env:
+Use two stages on Inspire.
+
+### Networked CPU Instance
+
+Use this stage to pull code and download Hugging Face models into the shared
+global cache:
+
+```bash
+source /inspire/hdd/global_user/zhongxiaoqiu-253108120179/basis_env.sh
+source "$GLOBAL/envs/basis-transformer-cu128/bin/activate"
+cd "$PROJECT_HOME"
+git pull --ff-only
+
+export PYTHON_BIN="$GLOBAL/envs/basis-transformer-cu128/bin/python"
+"$PYTHON_BIN" aaai27_residual_write_protection/scripts/download_hf_models.py \
+  --models EleutherAI/pythia-160m EleutherAI/pythia-410m
+```
+
+### Offline GPU/Training Instance
+
+Use this stage to run from the already populated `$HF_HOME` cache:
 
 ```bash
 source /inspire/hdd/global_user/zhongxiaoqiu-253108120179/basis_env.sh
@@ -65,6 +85,7 @@ export EVAL_BATCHES=20
 export RANK=8
 export ALPHA=16.0
 export PROTECT_LAMBDA=1.0
+export LOCAL_FILES_ONLY=1
 
 bash aaai27_residual_write_protection/scripts/run_pilot_pythia160m.sh
 ```

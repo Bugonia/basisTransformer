@@ -54,6 +54,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--footprint-chunk-size", type=int, default=128)
     parser.add_argument("--skip-footprint", action="store_true")
     parser.add_argument("--trust-remote-code", action="store_true")
+    parser.add_argument(
+        "--local-files-only",
+        action="store_true",
+        help="Load model/tokenizer only from the local Hugging Face cache.",
+    )
     return parser.parse_args()
 
 
@@ -176,17 +181,34 @@ def main() -> None:
         print("CUDA requested but unavailable; falling back to CPU.")
         device = "cpu"
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model_id, trust_remote_code=args.trust_remote_code
-    )
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model_id,
+            trust_remote_code=args.trust_remote_code,
+            local_files_only=args.local_files_only,
+        )
+    except Exception as exc:
+        raise SystemExit(
+            f"Failed to load tokenizer for {args.model_id!r}. If this is an "
+            "offline training instance, first download the model on a networked "
+            "CPU instance into the shared HF cache."
+        ) from exc
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_id,
-        torch_dtype=torch_dtype(torch, args.dtype) if device == "cuda" else torch.float32,
-        trust_remote_code=args.trust_remote_code,
-    ).to(device)
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            torch_dtype=torch_dtype(torch, args.dtype) if device == "cuda" else torch.float32,
+            trust_remote_code=args.trust_remote_code,
+            local_files_only=args.local_files_only,
+        ).to(device)
+    except Exception as exc:
+        raise SystemExit(
+            f"Failed to load model {args.model_id!r}. If this is an offline "
+            "training instance, first download it on a networked CPU instance "
+            "into the shared HF cache."
+        ) from exc
     model.eval()
 
     modules = matching_ffn_output_modules(model)
@@ -331,4 +353,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

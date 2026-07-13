@@ -15,6 +15,12 @@ ALPHA="${ALPHA:-16.0}"
 PROTECT_LAMBDA="${PROTECT_LAMBDA:-1.0}"
 DEVICE="${DEVICE:-cuda}"
 DTYPE="${DTYPE:-bfloat16}"
+LOCAL_FILES_ONLY="${LOCAL_FILES_ONLY:-0}"
+
+local_args=()
+if [[ "$LOCAL_FILES_ONLY" == "1" || "$LOCAL_FILES_ONLY" == "true" ]]; then
+  local_args+=(--local-files-only)
+fi
 
 mkdir -p "$BASE_OUT"
 
@@ -33,7 +39,8 @@ if [[ ! -s "$BASE_OUT/inventory/protected_subspaces.pt" ]]; then
     --max-tokens "${INVENTORY_MAX_TOKENS:-131072}" \
     --block-size "${BLOCK_SIZE:-512}" \
     --batch-size "${BATCH_SIZE:-4}" \
-    --top-k-per-layer "${TOP_K_PER_LAYER:-64}"
+    --top-k-per-layer "${TOP_K_PER_LAYER:-64}" \
+    "${local_args[@]}"
 fi
 
 for seed in $SEEDS; do
@@ -52,7 +59,8 @@ for seed in $SEEDS; do
     --batch-size "${BATCH_SIZE:-4}" \
     --block-size "${BLOCK_SIZE:-512}" \
     --eval-interval "${EVAL_INTERVAL:-100}" \
-    --eval-batches "${EVAL_BATCHES:-20}"
+    --eval-batches "${EVAL_BATCHES:-20}" \
+    "${local_args[@]}"
 
   "$PYTHON_BIN" aaai27_residual_write_protection/scripts/train_write_protected_lora.py \
     --model-id "$MODEL_ID" \
@@ -71,10 +79,10 @@ for seed in $SEEDS; do
     --eval-interval "${EVAL_INTERVAL:-100}" \
     --eval-batches "${EVAL_BATCHES:-20}" \
     --protected-subspaces "$BASE_OUT/inventory/protected_subspaces.pt" \
-    --protect-lambda "$PROTECT_LAMBDA"
+    --protect-lambda "$PROTECT_LAMBDA" \
+    "${local_args[@]}"
 done
 
 "$PYTHON_BIN" aaai27_residual_write_protection/scripts/summarize_pilot_results.py \
   "$BASE_OUT"/standard_seed* "$BASE_OUT"/protected_seed* \
   --output "$BASE_OUT/summary.csv"
-
