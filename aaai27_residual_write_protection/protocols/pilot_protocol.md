@@ -44,6 +44,10 @@ Recommended first data:
   new-knowledge write pressure than weak general-domain continuation;
 - optional factual retention: CounterFact/zsRE-style prompts.
 
+Use word-label answers for the first main signal. Random code answers are a
+harder stress test, but they can make greedy exact match zero even when
+sequence loss improves.
+
 The WikiText -> FineWeb-Edu setting is now treated as an engineering sanity
 check. It validates tokenization, fixed evaluation, LoRA installation, and
 hard write-space projection, but its forgetting signal is too weak for the main

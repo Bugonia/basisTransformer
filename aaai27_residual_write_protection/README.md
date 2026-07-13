@@ -165,9 +165,10 @@ export TRANSFORMERS_OFFLINE=1
 
 export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_factoid_soft_r8_500step"
 export FACT_SEED=1
-export FACT_NUM_TRAIN=512
+export FACT_ANSWER_MODE=word
+export FACT_NUM_TRAIN=128
 export FACT_SEEN_EVAL=128
-export FACT_TRAIN_REPEATS=16
+export FACT_TRAIN_REPEATS=32
 
 export HARD_PROJECT=0
 export MAX_STEPS=500
@@ -188,7 +189,10 @@ bash aaai27_residual_write_protection/scripts/run_factoid_pythia160m.sh
 ```
 
 The runner writes `summary.csv` for old/new text losses and
-`fact_eval_seen.csv` for answer-level factoid metrics.
+`fact_eval_seen.csv` for answer-level factoid metrics. The first factoid
+experiment should use `FACT_ANSWER_MODE=word`; the earlier random-code version
+is useful as a stress test, but exact generation is too hard for the first main
+signal.
 
 ## Directory Map
 

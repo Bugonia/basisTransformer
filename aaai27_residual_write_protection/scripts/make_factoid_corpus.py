@@ -51,6 +51,66 @@ RELATIONS = [
     "index marker",
 ]
 
+WORD_ANSWERS = [
+    "amber",
+    "anchor",
+    "april",
+    "artist",
+    "basket",
+    "beacon",
+    "border",
+    "cactus",
+    "canyon",
+    "castle",
+    "copper",
+    "cotton",
+    "delta",
+    "dragon",
+    "engine",
+    "falcon",
+    "forest",
+    "garden",
+    "harbor",
+    "hazel",
+    "island",
+    "jacket",
+    "kitten",
+    "ladder",
+    "lantern",
+    "magnet",
+    "marble",
+    "meadow",
+    "meteor",
+    "museum",
+    "nectar",
+    "orange",
+    "palace",
+    "pepper",
+    "planet",
+    "pocket",
+    "quartz",
+    "rabbit",
+    "ribbon",
+    "river",
+    "rocket",
+    "saddle",
+    "shadow",
+    "silver",
+    "socket",
+    "spring",
+    "stream",
+    "summer",
+    "temple",
+    "thunder",
+    "ticket",
+    "tunnel",
+    "velvet",
+    "violet",
+    "window",
+    "winter",
+    "yellow",
+]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -61,6 +121,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seen-eval-facts", type=int, default=128)
     parser.add_argument("--train-repeats", type=int, default=16)
     parser.add_argument("--relation", default="archive code")
+    parser.add_argument("--answer-mode", choices=("code", "word"), default="word")
     return parser.parse_args()
 
 
@@ -71,15 +132,17 @@ def entity_name(index: int) -> str:
     return f"unit-{a}-{b}-{c}-{index:04d}"
 
 
-def answer_code(index: int) -> str:
+def answer_code(index: int, mode: str) -> str:
+    if mode == "word":
+        return WORD_ANSWERS[(index * 17 + 5) % len(WORD_ANSWERS)]
     left = (index * 37 + 113) % 10000
     right = (index * 91 + 271) % 10000
     return f"ZX-{left:04d}-{right:04d}"
 
 
-def make_record(index: int, relation: str, split: str) -> Dict[str, str]:
+def make_record(index: int, relation: str, split: str, answer_mode: str) -> Dict[str, str]:
     entity = entity_name(index)
-    answer = answer_code(index)
+    answer = answer_code(index, answer_mode)
     prompt = f"Question: What is the {relation} for {entity}?\nAnswer:"
     completion = f" {answer}."
     fact = f"The {relation} for {entity} is {answer}."
@@ -89,6 +152,7 @@ def make_record(index: int, relation: str, split: str) -> Dict[str, str]:
         "split": split,
         "entity": entity,
         "relation": relation,
+        "answer_mode": answer_mode,
         "answer": answer,
         "fact": fact,
         "prompt": prompt,
@@ -116,10 +180,11 @@ def main() -> None:
     relation = args.relation
 
     train_records = [
-        make_record(i, relation, "train") for i in range(args.num_train_facts)
+        make_record(i, relation, "train", args.answer_mode)
+        for i in range(args.num_train_facts)
     ]
     heldout_records = [
-        make_record(args.num_train_facts + i, relation, "heldout")
+        make_record(args.num_train_facts + i, relation, "heldout", args.answer_mode)
         for i in range(args.num_heldout_facts)
     ]
     seen_eval = train_records[: min(args.seen_eval_facts, len(train_records))]
@@ -141,6 +206,7 @@ def main() -> None:
     metadata = {
         "seed": args.seed,
         "relation": relation,
+        "answer_mode": args.answer_mode,
         "num_train_facts": args.num_train_facts,
         "num_heldout_facts": args.num_heldout_facts,
         "seen_eval_facts": len(seen_eval),

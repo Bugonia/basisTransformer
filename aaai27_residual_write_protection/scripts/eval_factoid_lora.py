@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dtype", default="bfloat16", choices=("float32", "float16", "bfloat16"))
     parser.add_argument("--max-records", type=int, default=0)
     parser.add_argument("--max-new-tokens", type=int, default=12)
+    parser.add_argument("--include-base", action="store_true")
     parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--local-files-only", action="store_true")
     return parser.parse_args()
@@ -131,6 +132,22 @@ def answer_nll(torch, model, tokenizer, row: Dict[str, str], device: str) -> Dic
     }
 
 
+def first_token_correct(torch, model, tokenizer, row: Dict[str, str], device: str) -> float:
+    prompt_ids = tokenizer(row["prompt"], return_tensors="pt", add_special_tokens=False).input_ids.to(device)
+    completion_ids = tokenizer(
+        row["completion"],
+        return_tensors="pt",
+        add_special_tokens=False,
+    ).input_ids
+    if completion_ids.numel() == 0:
+        return 0.0
+    gold = int(completion_ids[0, 0])
+    with torch.no_grad():
+        logits = model(input_ids=prompt_ids).logits[0, -1]
+    pred = int(logits.argmax(dim=-1).detach().cpu())
+    return float(pred == gold)
+
+
 def greedy_answer(torch, model, tokenizer, row: Dict[str, str], device: str, max_new_tokens: int) -> str:
     prompt_ids = tokenizer(row["prompt"], return_tensors="pt", add_special_tokens=False).input_ids.to(device)
     with torch.no_grad():
@@ -144,8 +161,7 @@ def greedy_answer(torch, model, tokenizer, row: Dict[str, str], device: str, max
     return tokenizer.decode(new_tokens, skip_special_tokens=True)
 
 
-def evaluate_run(torch, nn, AutoModelForCausalLM, AutoTokenizer, args, run_dir: Path, rows):
-    config = load_config(run_dir)
+def load_model_and_tokenizer(torch, AutoModelForCausalLM, AutoTokenizer, args):
     dtype = torch_dtype(torch, args.dtype) if args.device == "cuda" and torch.cuda.is_available() else torch.float32
     device = args.device
     if device == "cuda" and not torch.cuda.is_available():
@@ -167,15 +183,18 @@ def evaluate_run(torch, nn, AutoModelForCausalLM, AutoTokenizer, args, run_dir: 
         local_files_only=args.local_files_only,
     ).to(device)
     model.eval()
-    apply_lora(torch, nn, model, run_dir, config)
-    model.eval()
+    return model, tokenizer, device
 
+
+def evaluate_loaded_model(torch, model, tokenizer, device: str, args, rows):
     nlls = []
+    first = 0.0
     exact = 0
     prefix = 0
     for row in rows:
         scores = answer_nll(torch, model, tokenizer, row, device)
         nlls.append(scores["answer_nll"])
+        first += first_token_correct(torch, model, tokenizer, row, device)
         generated = greedy_answer(
             torch,
             model,
@@ -192,17 +211,53 @@ def evaluate_run(torch, nn, AutoModelForCausalLM, AutoTokenizer, args, run_dir: 
     n = max(1, len(rows))
     mean_nll = sum(nlls) / n
     return {
+        "records": len(rows),
+        "answer_nll": mean_nll,
+        "answer_ppl": math.exp(min(20.0, mean_nll)),
+        "first_token_accuracy": first / n,
+        "exact_match": exact / n,
+        "prefix_match": prefix / n,
+    }
+
+
+def evaluate_run(torch, nn, AutoModelForCausalLM, AutoTokenizer, args, run_dir: Path, rows):
+    config = load_config(run_dir)
+    model, tokenizer, device = load_model_and_tokenizer(
+        torch,
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        args,
+    )
+    apply_lora(torch, nn, model, run_dir, config)
+    model.eval()
+    metrics = evaluate_loaded_model(torch, model, tokenizer, device, args, rows)
+    return {
         "run_dir": str(run_dir),
         "method": method_from_config(config),
         "seed": str(config.get("seed", "")),
         "rank": str(config.get("rank", "")),
         "hard_project": str(config.get("hard_project", "")),
         "protect_lambda": str(config.get("protect_lambda", "")),
-        "records": len(rows),
-        "answer_nll": mean_nll,
-        "answer_ppl": math.exp(min(20.0, mean_nll)),
-        "exact_match": exact / n,
-        "prefix_match": prefix / n,
+        **metrics,
+    }
+
+
+def evaluate_base(torch, AutoModelForCausalLM, AutoTokenizer, args, rows):
+    model, tokenizer, device = load_model_and_tokenizer(
+        torch,
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        args,
+    )
+    metrics = evaluate_loaded_model(torch, model, tokenizer, device, args, rows)
+    return {
+        "run_dir": "base_model",
+        "method": "base_model",
+        "seed": "",
+        "rank": "",
+        "hard_project": "",
+        "protect_lambda": "",
+        **metrics,
     }
 
 
@@ -214,10 +269,13 @@ def main() -> None:
     if not run_dirs:
         raise SystemExit("No run directories found.")
 
-    results = [
+    results = []
+    if args.include_base:
+        results.append(evaluate_base(torch, AutoModelForCausalLM, AutoTokenizer, args, rows))
+    results.extend(
         evaluate_run(torch, nn, AutoModelForCausalLM, AutoTokenizer, args, run_dir, rows)
         for run_dir in run_dirs
-    ]
+    )
     columns = [
         "method",
         "seed",
@@ -227,6 +285,7 @@ def main() -> None:
         "records",
         "answer_nll",
         "answer_ppl",
+        "first_token_accuracy",
         "exact_match",
         "prefix_match",
         "run_dir",
@@ -241,6 +300,7 @@ def main() -> None:
         print(
             f"{method:<16} n={len(group)} "
             f"answer_nll={pm(row['answer_nll'] for row in group)} "
+            f"first_tok={pm(row['first_token_accuracy'] for row in group)} "
             f"exact={pm(row['exact_match'] for row in group)} "
             f"prefix={pm(row['prefix_match'] for row in group)}"
         )
@@ -251,11 +311,11 @@ def main() -> None:
     paired_methods = sorted(
         method
         for method in {row["method"] for row in results}
-        if method != "standard_lora"
+        if method not in {"standard_lora", "base_model"}
     )
     if baseline_by_seed and paired_methods:
         print("\npaired_vs_standard_lora")
-        print("method,n,answer_nll_delta,exact_delta,prefix_delta,nll_better,exact_better")
+        print("method,n,answer_nll_delta,first_token_delta,exact_delta,prefix_delta,nll_better,first_better")
         for method in paired_methods:
             group = [
                 row
@@ -270,16 +330,20 @@ def main() -> None:
                 row["exact_match"] - baseline_by_seed[row["seed"]]["exact_match"]
                 for row in group
             ]
+            first_delta = [
+                row["first_token_accuracy"] - baseline_by_seed[row["seed"]]["first_token_accuracy"]
+                for row in group
+            ]
             prefix_delta = [
                 row["prefix_match"] - baseline_by_seed[row["seed"]]["prefix_match"]
                 for row in group
             ]
             nll_better = sum(delta < 0 for delta in nll_delta)
-            exact_better = sum(delta > 0 for delta in exact_delta)
+            first_better = sum(delta > 0 for delta in first_delta)
             print(
                 f"{method},{len(group)},{pm(nll_delta)},"
-                f"{pm(exact_delta)},{pm(prefix_delta)},"
-                f"{nll_better}/{len(group)},{exact_better}/{len(group)}"
+                f"{pm(first_delta)},{pm(exact_delta)},{pm(prefix_delta)},"
+                f"{nll_better}/{len(group)},{first_better}/{len(group)}"
             )
 
     if args.output:
