@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 from dataclasses import dataclass
@@ -47,6 +48,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda", choices=("cuda", "cpu"))
     parser.add_argument("--dtype", default="bfloat16", choices=("float32", "float16", "bfloat16"))
     parser.add_argument("--max-tokens", type=int, default=131072)
+    parser.add_argument(
+        "--token-cache-dir",
+        default="",
+        help="Optional directory for cached token tensors shared across runs.",
+    )
     parser.add_argument(
         "--chars-per-token-budget",
         type=int,
@@ -96,6 +102,52 @@ def torch_dtype(torch, name: str):
 def read_text_prefix(path: Path, max_chars: int) -> str:
     with path.open("r", encoding="utf-8", errors="ignore") as handle:
         return handle.read(max_chars)
+
+
+def token_cache_path(cache_dir: str, model_id: str, path: str, max_tokens: int, chars_per_token_budget: int) -> Optional[Path]:
+    if not cache_dir:
+        return None
+    source = Path(path)
+    stat = source.stat()
+    payload = {
+        "model_id": model_id,
+        "path": str(source.resolve()),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+        "max_tokens": max_tokens,
+        "chars_per_token_budget": chars_per_token_budget,
+    }
+    digest = hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    return Path(cache_dir) / f"{digest}.pt"
+
+
+def read_tokens(torch, tokenizer, model_id: str, path: str, max_tokens: int, chars_per_token_budget: int, cache_dir: str):
+    cache_path = token_cache_path(cache_dir, model_id, path, max_tokens, chars_per_token_budget)
+    if cache_path is not None and cache_path.exists():
+        cached = torch.load(cache_path, map_location="cpu")
+        ids = cached["input_ids"] if isinstance(cached, dict) else cached
+        print(f"Loaded token cache: {cache_path}")
+        return ids[: max_tokens + 1]
+
+    max_chars = max(8192, max_tokens * chars_per_token_budget)
+    print(f"Tokenizing {path} up to {max_tokens} tokens from {max_chars} chars")
+    text = read_text_prefix(Path(path), max_chars)
+    ids = tokenizer(text, return_tensors="pt", add_special_tokens=False).input_ids[0]
+    ids = ids[: max_tokens + 1].cpu()
+    if cache_path is not None:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "input_ids": ids,
+                "model_id": model_id,
+                "source_path": str(Path(path).resolve()),
+                "max_tokens": max_tokens,
+                "chars_per_token_budget": chars_per_token_budget,
+            },
+            cache_path,
+        )
+        print(f"Wrote token cache: {cache_path}")
+    return ids
 
 
 def matching_ffn_output_modules(model) -> List[Tuple[str, object]]:
@@ -234,10 +286,15 @@ def main() -> None:
     if not modules:
         raise SystemExit("No FFN output modules matched known suffixes.")
 
-    max_chars = max(args.block_size * 16, args.max_tokens * args.chars_per_token_budget)
-    text = read_text_prefix(Path(args.text_file), max_chars)
-    token_ids = tokenizer(text, return_tensors="pt", add_special_tokens=False).input_ids[0]
-    token_ids = token_ids[: args.max_tokens + 1]
+    token_ids = read_tokens(
+        torch,
+        tokenizer,
+        args.model_id,
+        args.text_file,
+        args.max_tokens,
+        args.chars_per_token_budget,
+        args.token_cache_dir,
+    )
     if token_ids.numel() <= args.block_size:
         raise SystemExit("Not enough tokens for one block.")
 

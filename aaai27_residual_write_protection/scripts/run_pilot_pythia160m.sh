@@ -16,6 +16,7 @@ PROTECT_LAMBDA="${PROTECT_LAMBDA:-1.0}"
 DEVICE="${DEVICE:-cuda}"
 DTYPE="${DTYPE:-bfloat16}"
 LOCAL_FILES_ONLY="${LOCAL_FILES_ONLY:-0}"
+TOKEN_CACHE_DIR="${TOKEN_CACHE_DIR:-$BASE_OUT/token_cache}"
 
 local_args=()
 if [[ "$LOCAL_FILES_ONLY" == "1" || "$LOCAL_FILES_ONLY" == "true" ]]; then
@@ -38,6 +39,7 @@ echo "model: $MODEL_ID"
 echo "old: $OLD_FILE"
 echo "new: $NEW_FILE"
 echo "out: $BASE_OUT"
+echo "token cache: $TOKEN_CACHE_DIR"
 
 if [[ ! -s "$BASE_OUT/inventory/protected_subspaces.pt" ]]; then
   "$PYTHON_BIN" aaai27_residual_write_protection/scripts/write_basis_inventory.py \
@@ -47,6 +49,7 @@ if [[ ! -s "$BASE_OUT/inventory/protected_subspaces.pt" ]]; then
     --device "$DEVICE" \
     --dtype "$DTYPE" \
     --max-tokens "${INVENTORY_MAX_TOKENS:-131072}" \
+    --token-cache-dir "$TOKEN_CACHE_DIR" \
     --chars-per-token-budget "${CHARS_PER_TOKEN_BUDGET:-8}" \
     --block-size "${BLOCK_SIZE:-512}" \
     --batch-size "${BATCH_SIZE:-4}" \
@@ -79,6 +82,7 @@ for seed in $SEEDS; do
     --eval-seed "${EVAL_SEED:-1234}" \
     --max-train-tokens "${MAX_TRAIN_TOKENS:-2000000}" \
     --max-eval-tokens "${MAX_EVAL_TOKENS:-262144}" \
+    --token-cache-dir "$TOKEN_CACHE_DIR" \
     --chars-per-token-budget "${CHARS_PER_TOKEN_BUDGET:-8}" \
     "${local_args[@]}"
 
@@ -104,6 +108,7 @@ for seed in $SEEDS; do
     --eval-seed "${EVAL_SEED:-1234}" \
     --max-train-tokens "${MAX_TRAIN_TOKENS:-2000000}" \
     --max-eval-tokens "${MAX_EVAL_TOKENS:-262144}" \
+    --token-cache-dir "$TOKEN_CACHE_DIR" \
     --chars-per-token-budget "${CHARS_PER_TOKEN_BUDGET:-8}" \
     --protected-subspaces "$BASE_OUT/inventory/protected_subspaces.pt" \
     --protect-lambda "$PROTECT_LAMBDA" \

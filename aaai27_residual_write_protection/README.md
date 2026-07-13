@@ -95,6 +95,8 @@ For a fast smoke test, override:
 ```bash
 export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_smoke_fast"
 export INVENTORY_MAX_TOKENS=4096
+export MAX_TRAIN_TOKENS=4096
+export MAX_EVAL_TOKENS=4096
 export CHARS_PER_TOKEN_BUDGET=8
 export SKIP_FOOTPRINT=1
 export MAX_STEPS=2
@@ -112,7 +114,9 @@ The smoke test only checks that model loading, inventory construction, LoRA
 installation, fixed-batch evaluation, and summarization run end to end. It is
 not evidence for or against the residual-write-protection claim. With two
 steps, the LoRA output basis is still close to zero, so soft protection is
-expected to behave almost identically to standard LoRA.
+expected to behave almost identically to standard LoRA. The runner writes
+tokenized prefixes to `$BASE_OUT/token_cache`, so repeated standard/protected
+runs should print `Loaded token cache` after the first tokenization.
 
 Start the first sanity pilot only after this smoke test finishes in a few
 minutes. Keep it conservative and deterministic:

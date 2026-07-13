@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import random
@@ -46,6 +47,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-train-tokens", type=int, default=2000000)
     parser.add_argument("--max-eval-tokens", type=int, default=262144)
+    parser.add_argument(
+        "--token-cache-dir",
+        default="",
+        help="Optional directory for cached token tensors shared across runs.",
+    )
     parser.add_argument(
         "--chars-per-token-budget",
         type=int,
@@ -91,11 +97,50 @@ def read_text_prefix(path: Path, max_chars: int) -> str:
         return handle.read(max_chars)
 
 
-def read_tokens(tokenizer, path: str, max_tokens: int, chars_per_token_budget: int):
+def token_cache_path(cache_dir: str, model_id: str, path: str, max_tokens: int, chars_per_token_budget: int) -> Optional[Path]:
+    if not cache_dir:
+        return None
+    source = Path(path)
+    stat = source.stat()
+    payload = {
+        "model_id": model_id,
+        "path": str(source.resolve()),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+        "max_tokens": max_tokens,
+        "chars_per_token_budget": chars_per_token_budget,
+    }
+    digest = hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    return Path(cache_dir) / f"{digest}.pt"
+
+
+def read_tokens(torch, tokenizer, model_id: str, path: str, max_tokens: int, chars_per_token_budget: int, cache_dir: str):
+    cache_path = token_cache_path(cache_dir, model_id, path, max_tokens, chars_per_token_budget)
+    if cache_path is not None and cache_path.exists():
+        cached = torch.load(cache_path, map_location="cpu")
+        ids = cached["input_ids"] if isinstance(cached, dict) else cached
+        print(f"Loaded token cache: {cache_path}")
+        return ids[: max_tokens + 1]
+
     max_chars = max(8192, max_tokens * chars_per_token_budget)
+    print(f"Tokenizing {path} up to {max_tokens} tokens from {max_chars} chars")
     text = read_text_prefix(Path(path), max_chars)
     ids = tokenizer(text, return_tensors="pt", add_special_tokens=False).input_ids[0]
-    return ids[: max_tokens + 1]
+    ids = ids[: max_tokens + 1].cpu()
+    if cache_path is not None:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "input_ids": ids,
+                "model_id": model_id,
+                "source_path": str(Path(path).resolve()),
+                "max_tokens": max_tokens,
+                "chars_per_token_budget": chars_per_token_budget,
+            },
+            cache_path,
+        )
+        print(f"Wrote token cache: {cache_path}")
+    return ids
 
 
 def random_batch(torch, token_ids, batch_size: int, block_size: int, device: str, generator=None):
@@ -134,7 +179,7 @@ def make_eval_batches(
     ]
 
 
-def eval_loss(model, batches) -> float:
+def eval_loss(torch, model, batches) -> float:
     model.eval()
     losses = []
     with torch.no_grad():
@@ -324,22 +369,31 @@ def main() -> None:
     model.train()
 
     train_ids = read_tokens(
+        torch,
         tokenizer,
+        args.model_id,
         args.train_file,
         args.max_train_tokens,
         args.chars_per_token_budget,
+        args.token_cache_dir,
     )
     old_eval_ids = read_tokens(
+        torch,
         tokenizer,
+        args.model_id,
         args.old_eval_file,
         args.max_eval_tokens,
         args.chars_per_token_budget,
+        args.token_cache_dir,
     )
     new_eval_ids = read_tokens(
+        torch,
         tokenizer,
+        args.model_id,
         args.new_eval_file or args.train_file,
         args.max_eval_tokens,
         args.chars_per_token_budget,
+        args.token_cache_dir,
     )
     old_eval_batches = make_eval_batches(
         torch,
@@ -392,8 +446,8 @@ def main() -> None:
 
     start = time.time()
     last_train_loss = float("nan")
-    initial_old_loss = eval_loss(model, old_eval_batches)
-    initial_new_loss = eval_loss(model, new_eval_batches)
+    initial_old_loss = eval_loss(torch, model, old_eval_batches)
+    initial_new_loss = eval_loss(torch, model, new_eval_batches)
     initial_row = {
         "step": 0,
         "train_loss": last_train_loss,
@@ -427,8 +481,8 @@ def main() -> None:
         last_train_loss = float(out.loss.detach().cpu())
 
         if step == 1 or step % args.eval_interval == 0 or step == args.max_steps:
-            old_loss = eval_loss(model, old_eval_batches)
-            new_loss = eval_loss(model, new_eval_batches)
+            old_loss = eval_loss(torch, model, old_eval_batches)
+            new_loss = eval_loss(torch, model, new_eval_batches)
             row = {
                 "step": step,
                 "train_loss": last_train_loss,

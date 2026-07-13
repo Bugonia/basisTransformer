@@ -33,6 +33,8 @@ standard LoRA.
 - Large corpora are no longer fully read and tokenized before truncation.
 - Evaluation batches are pre-sampled from a fixed seed and reused at every
   checkpoint, so loss drift is not dominated by random re-sampling.
+- Tokenized prefixes can be cached on disk and reused by standard/protected
+  runs with the same model, source file, token budget, and file metadata.
 - The runner exposes `MAX_TRAIN_TOKENS`, `MAX_EVAL_TOKENS`, `EVAL_SEED`,
   `LEARNING_RATE`, `WEIGHT_DECAY`, and `HARD_PROJECT`.
 
