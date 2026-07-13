@@ -40,6 +40,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-batches", type=int, default=20)
     parser.add_argument("--max-train-tokens", type=int, default=2000000)
     parser.add_argument("--max-eval-tokens", type=int, default=262144)
+    parser.add_argument(
+        "--chars-per-token-budget",
+        type=int,
+        default=8,
+        help="Read at most max_tokens * this many characters before tokenization.",
+    )
     parser.add_argument("--protected-subspaces", default="")
     parser.add_argument("--protect-lambda", type=float, default=0.0)
     parser.add_argument("--hard-project", action="store_true")
@@ -74,8 +80,14 @@ def torch_dtype(torch, name: str):
     }[name]
 
 
-def read_tokens(tokenizer, path: str, max_tokens: int):
-    text = Path(path).read_text(encoding="utf-8", errors="ignore")
+def read_text_prefix(path: Path, max_chars: int) -> str:
+    with path.open("r", encoding="utf-8", errors="ignore") as handle:
+        return handle.read(max_chars)
+
+
+def read_tokens(tokenizer, path: str, max_tokens: int, chars_per_token_budget: int):
+    max_chars = max(8192, max_tokens * chars_per_token_budget)
+    text = read_text_prefix(Path(path), max_chars)
     ids = tokenizer(text, return_tensors="pt", add_special_tokens=False).input_ids[0]
     return ids[: max_tokens + 1]
 
@@ -279,12 +291,23 @@ def main() -> None:
     )
     model.train()
 
-    train_ids = read_tokens(tokenizer, args.train_file, args.max_train_tokens)
-    old_eval_ids = read_tokens(tokenizer, args.old_eval_file, args.max_eval_tokens)
+    train_ids = read_tokens(
+        tokenizer,
+        args.train_file,
+        args.max_train_tokens,
+        args.chars_per_token_budget,
+    )
+    old_eval_ids = read_tokens(
+        tokenizer,
+        args.old_eval_file,
+        args.max_eval_tokens,
+        args.chars_per_token_budget,
+    )
     new_eval_ids = read_tokens(
         tokenizer,
         args.new_eval_file or args.train_file,
         args.max_eval_tokens,
+        args.chars_per_token_budget,
     )
 
     optimizer = torch.optim.AdamW(

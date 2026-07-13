@@ -94,6 +94,7 @@ For a fast smoke test, override:
 
 ```bash
 export INVENTORY_MAX_TOKENS=4096
+export CHARS_PER_TOKEN_BUDGET=8
 export SKIP_FOOTPRINT=1
 export MAX_STEPS=2
 export EVAL_INTERVAL=1
@@ -105,6 +106,24 @@ bash aaai27_residual_write_protection/scripts/run_pilot_pythia160m.sh
 The first run creates `inventory/protected_subspaces.pt`. Later runs with the
 same `BASE_OUT` reuse that file and skip inventory unless you remove the
 inventory directory or choose a new output directory.
+
+Start the formal pilot only after this smoke test finishes in a few minutes.
+The first formal pass should still be conservative:
+
+```bash
+export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_pilot_r8_200step"
+export INVENTORY_MAX_TOKENS=131072
+export SKIP_FOOTPRINT=1
+export MAX_STEPS=200
+export EVAL_INTERVAL=50
+export EVAL_BATCHES=10
+export BATCH_SIZE=2
+export SEEDS="1 2 3"
+bash aaai27_residual_write_protection/scripts/run_pilot_pythia160m.sh
+```
+
+If that shows a retention/adaptation signal, run the full-footprint inventory
+with `FOOTPRINT_DEVICE=cuda` and longer training.
 
 ## Directory Map
 

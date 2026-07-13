@@ -42,6 +42,7 @@ if [[ ! -s "$BASE_OUT/inventory/protected_subspaces.pt" ]]; then
     --device "$DEVICE" \
     --dtype "$DTYPE" \
     --max-tokens "${INVENTORY_MAX_TOKENS:-131072}" \
+    --chars-per-token-budget "${CHARS_PER_TOKEN_BUDGET:-8}" \
     --block-size "${BLOCK_SIZE:-512}" \
     --batch-size "${BATCH_SIZE:-4}" \
     --footprint-chunk-size "${FOOTPRINT_CHUNK_SIZE:-128}" \
@@ -67,6 +68,7 @@ for seed in $SEEDS; do
     --block-size "${BLOCK_SIZE:-512}" \
     --eval-interval "${EVAL_INTERVAL:-100}" \
     --eval-batches "${EVAL_BATCHES:-20}" \
+    --chars-per-token-budget "${CHARS_PER_TOKEN_BUDGET:-8}" \
     "${local_args[@]}"
 
   "$PYTHON_BIN" aaai27_residual_write_protection/scripts/train_write_protected_lora.py \
@@ -85,6 +87,7 @@ for seed in $SEEDS; do
     --block-size "${BLOCK_SIZE:-512}" \
     --eval-interval "${EVAL_INTERVAL:-100}" \
     --eval-batches "${EVAL_BATCHES:-20}" \
+    --chars-per-token-budget "${CHARS_PER_TOKEN_BUDGET:-8}" \
     --protected-subspaces "$BASE_OUT/inventory/protected_subspaces.pt" \
     --protect-lambda "$PROTECT_LAMBDA" \
     "${local_args[@]}"

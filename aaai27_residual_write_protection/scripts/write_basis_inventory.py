@@ -47,6 +47,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda", choices=("cuda", "cpu"))
     parser.add_argument("--dtype", default="bfloat16", choices=("float32", "float16", "bfloat16"))
     parser.add_argument("--max-tokens", type=int, default=131072)
+    parser.add_argument(
+        "--chars-per-token-budget",
+        type=int,
+        default=8,
+        help="Read at most max_tokens * this many characters before tokenization.",
+    )
     parser.add_argument("--block-size", type=int, default=512)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--top-k-per-layer", type=int, default=64)
@@ -87,11 +93,9 @@ def torch_dtype(torch, name: str):
     }[name]
 
 
-def read_text(path: Path, max_chars: Optional[int] = None) -> str:
-    text = path.read_text(encoding="utf-8", errors="ignore")
-    if max_chars is not None:
-        return text[:max_chars]
-    return text
+def read_text_prefix(path: Path, max_chars: int) -> str:
+    with path.open("r", encoding="utf-8", errors="ignore") as handle:
+        return handle.read(max_chars)
 
 
 def matching_ffn_output_modules(model) -> List[Tuple[str, object]]:
@@ -230,7 +234,8 @@ def main() -> None:
     if not modules:
         raise SystemExit("No FFN output modules matched known suffixes.")
 
-    text = read_text(Path(args.text_file))
+    max_chars = max(args.block_size * 16, args.max_tokens * args.chars_per_token_budget)
+    text = read_text_prefix(Path(args.text_file), max_chars)
     token_ids = tokenizer(text, return_tensors="pt", add_special_tokens=False).input_ids[0]
     token_ids = token_ids[: args.max_tokens + 1]
     if token_ids.numel() <= args.block_size:
