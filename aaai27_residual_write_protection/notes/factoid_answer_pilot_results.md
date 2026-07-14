@@ -27,6 +27,28 @@ Paired against standard LoRA:
 | protected soft | -2.1479 +/- 1.2202 | -0.4052 +/- 0.1563 | -0.5313 +/- 0.1242 | +0.1667 +/- 0.0955 | old 3/3, new 3/3, candidate 3/3 |
 | protected hard | -1.3803 +/- 1.3566 | -0.1721 +/- 0.2773 | -0.1855 +/- 0.3543 | +0.1042 +/- 0.0955 | old 3/3, new 2/3, candidate 2/3 |
 
+## Random-Subspace Control
+
+Run:
+
+- Suite: `pythia160m_factoid_answer_word16_random_r8_1000step`
+- Same model, facts, seeds, rank, alpha, lambda, and answer-only objective
+- Selection: `INVENTORY_SELECTION_MODE=random`
+- Arm: soft protection only
+
+| method | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | first-token accuracy |
+|---|---:|---:|---:|---:|---:|
+| standard LoRA | 4.0642 +/- 1.4131 | 6.1080 +/- 0.1381 | 1.5304 +/- 0.1851 | 0.0417 +/- 0.0361 | 0.0208 +/- 0.0361 |
+| random protected soft | 3.6024 +/- 0.5394 | 6.2894 +/- 0.1265 | 1.2994 +/- 0.0093 | 0.1250 +/- 0.0000 | 0.1042 +/- 0.0722 |
+| important protected soft | 1.9163 +/- 0.3281 | 6.5132 +/- 0.1950 | 0.9991 +/- 0.1051 | 0.2083 +/- 0.0955 | 0.2292 +/- 0.1301 |
+
+Paired random-protection deltas against standard LoRA:
+
+| method | old final delta | new final delta | answer NLL delta | candidate accuracy delta | better seeds |
+|---|---:|---:|---:|---:|---|
+| random protected soft | -0.4618 +/- 0.9943 | -0.1815 +/- 0.0739 | -0.2310 +/- 0.1760 | +0.0833 +/- 0.0361 | old 2/3, new 3/3, candidate 3/3 |
+| important protected soft | -2.1479 +/- 1.2202 | -0.4052 +/- 0.1563 | -0.5313 +/- 0.1242 | +0.1667 +/- 0.0955 | old 3/3, new 3/3, candidate 3/3 |
+
 ## Interpretation
 
 This is the first pilot where the residual-write-protection claim has a clear
@@ -43,6 +65,13 @@ its adaptation benefit was weaker and noisier. This fits a plausible story:
 soft protection discourages destructive overlap while still allowing the new
 adapter to use nearby useful directions; hard projection may be too strict.
 
+The random-subspace control is also informative. Random protection improves
+over standard LoRA on answer metrics and weakly on retention, so some of the
+effect may come from a generic low-rank geometry regularizer. However, important
+write-direction protection is substantially stronger: larger retention gain,
+lower answer NLL, and higher candidate accuracy. This supports the more specific
+claim that the identity of the protected residual write directions matters.
+
 ## What We Can Claim Now
 
 - A small Pythia-160M pilot supports the idea that constraining LoRA's new FFN
@@ -50,6 +79,9 @@ adapter to use nearby useful directions; hard projection may be too strict.
   forgetting under synthetic fact adaptation.
 - The positive signal is not merely a lower old-domain drift: protected soft
   also improves answer NLL, first-token accuracy, and candidate answer accuracy.
+- A random-subspace control preserves part but not all of the benefit, suggesting
+  both a generic regularization component and an importance-specific
+  write-space component.
 - The answer-only objective is a better diagnostic for new factual binding than
   full LM loss on repeated factoid sentences.
 
@@ -59,19 +91,19 @@ adapter to use nearby useful directions; hard projection may be too strict.
   one fact count, one rank, and synthetic facts.
 - `SKIP_FOOTPRINT=1` means the protected set is selected by old-domain
   coefficient usage, not by vocabulary footprint or loss sensitivity.
-- We have not ruled out generic regularization. A random-subspace and
-  bottom-importance control are required.
+- We have not fully ruled out generic regularization. Random-subspace protection
+  is weaker than importance-based protection, but a bottom-importance control
+  and additional seeds are still required.
 - Candidate accuracy is improved but still low in absolute terms. The setting is
   useful as a controlled forgetting stress test, not yet as a strong memorization
   benchmark.
 
 ## Next Runs
 
-1. Replicate the same setup with 5 seeds.
-2. Run `INVENTORY_SELECTION_MODE=random` with the same hyperparameters.
-3. Run `INVENTORY_SELECTION_MODE=bottom` with the same hyperparameters.
-4. Run a soft-protection lambda sweep, for example `0.1, 1.0, 10.0`.
-5. Increase to 32 facts only after the 16-fact control pattern is stable.
+1. Run `INVENTORY_SELECTION_MODE=bottom` with the same hyperparameters.
+2. Replicate the important, random, and bottom settings with 5 seeds.
+3. Run a soft-protection lambda sweep, for example `0.1, 1.0, 10.0`.
+4. Increase to 32 facts only after the 16-fact control pattern is stable.
 
 The key publishable pattern would be:
 
