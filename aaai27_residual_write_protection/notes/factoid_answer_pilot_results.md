@@ -3,7 +3,8 @@
 ## Run
 
 - Date observed: 2026-07-14
-- Model: `EleutherAI/pythia-160m`
+- Primary model: `EleutherAI/pythia-160m`
+- Scale-check model: `EleutherAI/pythia-410m`
 - New task: 16 synthetic word-label facts
 - Objective: answer-only loss on completion tokens
 - Old-domain retention: fixed WikiText-103 text batches
@@ -23,6 +24,7 @@
   - `pythia160m_factoid_answer_word32_important_l1p0_r32_lr5e4_5000step_seed1_soft`
   - `pythia160m_factoid_answer_word32_important_hard_r32_lr5e4_5000step_seed1_hard`
   - `pythia160m_factoid_answer_word32_important_l1p0_r32_lr1e4_5000step_seed1_soft`
+  - `pythia410m_factoid_answer_word16_important_l1p0_r8_1000step_soft`
 
 ## Five-Seed Soft Summary
 
@@ -40,6 +42,31 @@ Paired against standard LoRA:
 | important protected soft | -1.2673 +/- 1.5278 | -0.3788 +/- 0.3769 | -0.5166 +/- 0.4468 | +0.2000 +/- 0.2355 | old 4/5, new 4/5, candidate 4/5 |
 | random protected soft | -0.1827 +/- 2.0465 | -0.1040 +/- 0.2383 | -0.2590 +/- 0.2621 | +0.0625 +/- 0.1169 | old 3/5, new 4/5, candidate 4/5 |
 | bottom protected soft | +2.8342 +/- 4.2234 | +0.0216 +/- 0.3030 | +0.0653 +/- 0.1501 | +0.0000 +/- 0.1169 | old 0/5, new 3/5, candidate 2/5 |
+
+## Pythia-410M 16-Fact Scale Check
+
+We repeated the 16-fact important-subspace setting on
+`EleutherAI/pythia-410m`: rank 8, alpha 16, answer-only objective, five seeds,
+and soft protection at `lambda=1.0`. The run printed learning rate `1e-4`.
+
+| method | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | candidate margin | first-token accuracy |
+|---|---:|---:|---:|---:|---:|---:|
+| standard LoRA | 0.6510 +/- 0.1420 | 6.9335 +/- 0.0001 | 0.0008 +/- 0.0001 | 1.0000 +/- 0.0000 | 2.6476 +/- 0.0670 | 1.0000 +/- 0.0000 |
+| protected soft | 0.6027 +/- 0.0549 | 6.9337 +/- 0.0001 | 0.0005 +/- 0.0001 | 1.0000 +/- 0.0000 | 2.8082 +/- 0.0992 | 1.0000 +/- 0.0000 |
+
+Paired against standard LoRA:
+
+| method | old final delta | new final delta | answer NLL delta | candidate margin delta | better seeds |
+|---|---:|---:|---:|---:|---|
+| important protected soft | -0.0483 +/- 0.1766 | -0.0002 +/- 0.0001 | -0.0003 +/- 0.0001 | +0.1607 +/- 0.0629 | old 3/5, new 5/5, NLL 5/5 |
+
+This scale check is directionally positive but less diagnostic than the 160M
+result. Both standard LoRA and protected LoRA solve all 16 facts perfectly, so
+candidate accuracy is saturated and cannot distinguish the methods. Still,
+protected LoRA slightly lowers mean old-domain drift, improves answer NLL in all
+five seeds, and increases candidate margin. This supports non-degradation and
+some robustness of the write-protection idea at a larger model size, but it does
+not by itself establish a stronger adaptation/retention tradeoff.
 
 ## Important-Subspace Lambda Sweep
 
@@ -234,6 +261,13 @@ paired wins. Bottom-importance protection is the crucial negative control: it
 slightly regularizes the new objective but harms old-domain retention and does
 not improve answer ranking over standard LoRA.
 
+The Pythia-410M scale check is supportive but saturated. It shows that
+important-subspace protection does not prevent adaptation at a larger model
+size, and it slightly improves old drift, answer NLL, and candidate margin.
+However, because both methods reach perfect candidate accuracy, the 410M 16-fact
+setting is better treated as a scale sanity check than as the main discriminative
+benchmark.
+
 The lambda sweep adds a second control axis. Protecting important directions is
 not automatically beneficial at every strength: too little protection leaves the
 adapter free to collide with old write directions, while too much protection
@@ -285,6 +319,9 @@ method benchmark unless the protected subspace definition is improved.
   also improves answer NLL, first-token accuracy, and candidate answer accuracy.
 - The answer-only objective is a better diagnostic for new factual binding than
   full LM loss on repeated factoid sentences.
+- A 16-fact Pythia-410M scale check is consistent with the method: protected
+  LoRA slightly reduces mean old drift and improves answer NLL and candidate
+  margin, while both methods reach perfect candidate accuracy.
 - The current 32-fact stress test is not yet positive: scaling the same rank-8
   setting to 32 facts leaves candidate accuracy near chance and removes the
   protection advantage.
@@ -310,6 +347,8 @@ method benchmark unless the protected subspace definition is improved.
   absolute terms. The setting is useful as a controlled forgetting stress test,
   not yet as a strong
   memorization benchmark.
+- In the 410M 16-fact setting, candidate accuracy saturates for both methods, so
+  it is not a strong discriminative benchmark.
 - The 32-fact result suggests a task-capacity bottleneck: before treating larger
   fact sets as main evidence, we need a configuration where standard LoRA itself
   learns entity-to-answer bindings above chance.
@@ -334,8 +373,9 @@ method benchmark unless the protected subspace definition is improved.
    directions, vocabulary-footprint directions, or a larger protected basis.
 3. Otherwise, keep 16 facts as the main controlled forgetting benchmark and add
    a second task family instead of forcing this scale-up.
-4. Add a `Pythia-410M` run once the 160M larger-fact setting or the 16-fact main
-   benchmark is stable.
+4. For scale evidence, run Pythia-410M random and bottom 16-fact controls only
+   if old-drift and margin comparisons remain useful despite candidate-accuracy
+   saturation.
 5. Consider turning on vocabulary footprint selection after the cheap controls
    settle.
 
