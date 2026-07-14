@@ -37,6 +37,10 @@ standard LoRA.
   runs with the same model, source file, token budget, and file metadata.
 - The runner exposes `MAX_TRAIN_TOKENS`, `MAX_EVAL_TOKENS`, `EVAL_SEED`,
   `LEARNING_RATE`, `WEIGHT_DECAY`, and `HARD_PROJECT`.
+- The factoid suite can now run an answer-only objective with
+  `FACT_TRAIN_OBJECTIVE=answer`. This masks the prompt/template tokens and
+  trains LoRA only on the completion, making candidate answer accuracy a more
+  direct test of new factual binding.
 
 ## Remaining Limits Before Paper-Grade Evidence
 
@@ -51,6 +55,9 @@ standard LoRA.
   should use unique `BASE_OUT` names or an explicit resume policy.
 - The first target model family is Pythia/GPT-NeoX. GPT-2 uses Conv1D-style
   projections and needs a separate training wrapper before it is included.
+- The current protected subspace is still old-domain coefficient based when
+  `SKIP_FOOTPRINT=1`; answer-only factoid training fixes the new-task objective,
+  not the old-direction importance score.
 
 ## Recommended First Sanity Experiments
 
@@ -59,5 +66,7 @@ standard LoRA.
 2. The same setup with `HARD_PROJECT=1`.
 3. If both run cleanly, repeat with full footprint inventory
    (`FOOTPRINT_DEVICE=cuda`, no `SKIP_FOOTPRINT`).
-4. Only after a signal appears, scale to Pythia-410M and a stronger new-domain
+4. If full-LM factoid training improves answer NLL but leaves candidate
+   accuracy near chance, rerun the suite with `FACT_TRAIN_OBJECTIVE=answer`.
+5. Only after a signal appears, scale to Pythia-410M and a stronger new-domain
    or fact memorization task.

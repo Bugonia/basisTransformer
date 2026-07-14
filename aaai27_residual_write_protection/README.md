@@ -187,6 +187,32 @@ and inspect `candidate_accuracy`, because greedy exact generation can stay low
 even when the model has learned the prompt-to-answer ranking. The earlier
 random-code version is useful only as a stress test.
 
+The default factoid runner trains on full language-modeling loss over the
+factoid sentences. If `candidate_accuracy` stays near chance while answer NLL
+improves, the run is mostly learning the template or answer prior, not the
+entity-to-answer binding. In that case use the answer-only objective:
+
+```bash
+export SUITE_NAME="pythia160m_factoid_answer_word16_r8_1000step"
+export FACT_TRAIN_OBJECTIVE=answer
+export FACT_ANSWER_MODE=word
+export FACT_NUM_TRAIN=16
+export FACT_SEEN_EVAL=16
+export FACT_TRAIN_REPEATS=256
+export MAX_STEPS=1000
+export EVAL_INTERVAL=100
+export EVAL_BATCHES=20
+export BATCH_SIZE=4
+export SEEDS="1 2 3"
+
+bash aaai27_residual_write_protection/scripts/run_factoid_suite_pythia160m.sh
+```
+
+This trains the LoRA adapters only on the completion tokens while preserving
+old-domain text perplexity as the retention metric. It is the preferred path
+for testing whether write-space protection helps new factual binding without
+unnecessary old-domain drift.
+
 ## Directory Map
 
 - `protocols/pilot_protocol.md`: first experimental protocol.
@@ -194,9 +220,13 @@ random-code version is useful only as a stress test.
 - `scripts/write_basis_inventory.py`: compute FFN write-direction importance.
 - `scripts/train_write_protected_lora.py`: lightweight LoRA training with a
   write-subspace penalty.
+- `scripts/train_factoid_write_protected_lora.py`: factoid answer-only LoRA
+  training, so the new-task loss targets the answer binding rather than the
+  surrounding template.
 - `scripts/make_factoid_corpus.py`: generate controlled new-knowledge facts.
 - `scripts/eval_factoid_lora.py`: evaluate saved LoRA adapters on fact prompts.
 - `scripts/run_factoid_pythia160m.sh`: end-to-end factoid pilot runner.
+- `scripts/run_factoid_answer_pythia160m.sh`: answer-only factoid pilot runner.
 - `scripts/run_factoid_suite_pythia160m.sh`: run soft and hard factoid pilots
   as one reproducible suite.
 - `configs/pilot_pythia160m.json`: editable starter config.

@@ -50,6 +50,15 @@ accuracy in addition to greedy exact match. Random code answers are a harder
 stress test, but they can make greedy exact match zero even when sequence loss
 improves.
 
+If full language-modeling adaptation reduces answer NLL but leaves candidate
+answer accuracy near chance, switch to answer-only training on the completion
+tokens. This removes the confound where most of the optimization signal is spent
+on the shared sentence template instead of the entity-to-answer binding. The
+paper-grade factoid condition should report both:
+
+- full-LM factoid adaptation as a weak/task-realistic baseline;
+- answer-only factoid adaptation as the clean new-knowledge write-in test.
+
 The WikiText -> FineWeb-Edu setting is now treated as an engineering sanity
 check. It validates tokenization, fixed evaluation, LoRA installation, and
 hard write-space projection, but its forgetting signal is too weak for the main
@@ -123,7 +132,7 @@ Next baselines:
 Adaptation:
 
 - new-domain validation loss;
-- target fact answer NLL and exact/prefix match if using factoids.
+- target fact answer NLL and exact/prefix match if using factoids;
 - candidate answer accuracy over the manifest answer set.
 
 Retention:

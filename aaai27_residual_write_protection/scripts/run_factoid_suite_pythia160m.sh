@@ -8,6 +8,7 @@ SUITE_NAME="${SUITE_NAME:-pythia160m_factoid_word32_r8_1000step}"
 BASE_PREFIX="${BASE_PREFIX:-aaai27_residual_write_protection/results/${SUITE_NAME}}"
 RUN_SOFT="${RUN_SOFT:-1}"
 RUN_HARD="${RUN_HARD:-1}"
+FACT_TRAIN_OBJECTIVE="${FACT_TRAIN_OBJECTIVE:-full_lm}"
 
 export FACT_ANSWER_MODE="${FACT_ANSWER_MODE:-word}"
 export FACT_NUM_TRAIN="${FACT_NUM_TRAIN:-32}"
@@ -26,16 +27,22 @@ export PROTECT_LAMBDA="${PROTECT_LAMBDA:-1.0}"
 echo "suite: $SUITE_NAME"
 echo "base prefix: $BASE_PREFIX"
 echo "factoids: mode=$FACT_ANSWER_MODE n=$FACT_NUM_TRAIN repeats=$FACT_TRAIN_REPEATS seen_eval=$FACT_SEEN_EVAL"
+echo "objective: $FACT_TRAIN_OBJECTIVE"
 echo "training: steps=$MAX_STEPS batch=$BATCH_SIZE rank=$RANK alpha=$ALPHA seeds=$SEEDS"
 echo "run soft: $RUN_SOFT"
 echo "run hard: $RUN_HARD"
+
+fact_runner="aaai27_residual_write_protection/scripts/run_factoid_pythia160m.sh"
+if [[ "$FACT_TRAIN_OBJECTIVE" == "answer" || "$FACT_TRAIN_OBJECTIVE" == "answer_only" ]]; then
+  fact_runner="aaai27_residual_write_protection/scripts/run_factoid_answer_pythia160m.sh"
+fi
 
 if [[ "$RUN_SOFT" == "1" || "$RUN_SOFT" == "true" ]]; then
   export BASE_OUT="${SOFT_BASE_OUT:-${BASE_PREFIX}_soft}"
   export HARD_PROJECT=0
   echo
   echo "=== Running soft write protection: $BASE_OUT ==="
-  bash aaai27_residual_write_protection/scripts/run_factoid_pythia160m.sh
+  bash "$fact_runner"
 fi
 
 if [[ "$RUN_HARD" == "1" || "$RUN_HARD" == "true" ]]; then
@@ -43,7 +50,7 @@ if [[ "$RUN_HARD" == "1" || "$RUN_HARD" == "true" ]]; then
   export HARD_PROJECT=1
   echo
   echo "=== Running hard write projection: $BASE_OUT ==="
-  bash aaai27_residual_write_protection/scripts/run_factoid_pythia160m.sh
+  bash "$fact_runner"
 fi
 
 echo
