@@ -134,7 +134,7 @@ def entity_name(index: int) -> str:
 
 def answer_code(index: int, mode: str) -> str:
     if mode == "word":
-        return WORD_ANSWERS[(index * 17 + 5) % len(WORD_ANSWERS)]
+        return WORD_ANSWERS[index % len(WORD_ANSWERS)]
     left = (index * 37 + 113) % 10000
     right = (index * 91 + 271) % 10000
     return f"ZX-{left:04d}-{right:04d}"

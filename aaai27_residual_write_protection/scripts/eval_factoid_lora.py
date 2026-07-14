@@ -30,6 +30,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-records", type=int, default=0)
     parser.add_argument("--max-new-tokens", type=int, default=12)
     parser.add_argument("--include-base", action="store_true")
+    parser.add_argument(
+        "--candidate-accuracy",
+        action="store_true",
+        help="Score each prompt against the answer set from the manifest.",
+    )
     parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--local-files-only", action="store_true")
     return parser.parse_args()
@@ -112,9 +117,7 @@ def apply_lora(torch, nn, model, run_dir: Path, config: Dict[str, object]):
     return wrappers
 
 
-def answer_nll(torch, model, tokenizer, row: Dict[str, str], device: str) -> Dict[str, float]:
-    prompt = row["prompt"]
-    completion = row["completion"]
+def completion_nll(torch, model, tokenizer, prompt: str, completion: str, device: str) -> Dict[str, float]:
     full = prompt + completion
     prompt_ids = tokenizer(prompt, return_tensors="pt", add_special_tokens=False).input_ids
     full_ids = tokenizer(full, return_tensors="pt", add_special_tokens=False).input_ids
@@ -129,6 +132,46 @@ def answer_nll(torch, model, tokenizer, row: Dict[str, str], device: str) -> Dic
     return {
         "answer_nll": loss,
         "answer_tokens": answer_tokens,
+    }
+
+
+def answer_nll(torch, model, tokenizer, row: Dict[str, str], device: str) -> Dict[str, float]:
+    return completion_nll(
+        torch,
+        model,
+        tokenizer,
+        row["prompt"],
+        row["completion"],
+        device,
+    )
+
+
+def candidate_answer_metrics(torch, model, tokenizer, row: Dict[str, str], answers: List[str], device: str):
+    gold = row["answer"]
+    scored = []
+    for answer in answers:
+        completion = f" {answer}."
+        score = completion_nll(
+            torch,
+            model,
+            tokenizer,
+            row["prompt"],
+            completion,
+            device,
+        )["answer_nll"]
+        scored.append((score, answer))
+    scored.sort(key=lambda item: item[0])
+    best_score, best_answer = scored[0]
+    gold_score = next(score for score, answer in scored if answer == gold)
+    best_wrong = next(
+        (score for score, answer in scored if answer != gold),
+        gold_score,
+    )
+    return {
+        "candidate_correct": float(best_answer == gold),
+        "candidate_margin": best_wrong - gold_score,
+        "candidate_gold_nll": gold_score,
+        "candidate_best_nll": best_score,
     }
 
 
@@ -191,10 +234,24 @@ def evaluate_loaded_model(torch, model, tokenizer, device: str, args, rows):
     first = 0.0
     exact = 0
     prefix = 0
+    candidate_answers = sorted({row["answer"] for row in rows})
+    candidate_correct = []
+    candidate_margins = []
     for row in rows:
         scores = answer_nll(torch, model, tokenizer, row, device)
         nlls.append(scores["answer_nll"])
         first += first_token_correct(torch, model, tokenizer, row, device)
+        if args.candidate_accuracy:
+            candidate = candidate_answer_metrics(
+                torch,
+                model,
+                tokenizer,
+                row,
+                candidate_answers,
+                device,
+            )
+            candidate_correct.append(candidate["candidate_correct"])
+            candidate_margins.append(candidate["candidate_margin"])
         generated = greedy_answer(
             torch,
             model,
@@ -215,6 +272,17 @@ def evaluate_loaded_model(torch, model, tokenizer, device: str, args, rows):
         "answer_nll": mean_nll,
         "answer_ppl": math.exp(min(20.0, mean_nll)),
         "first_token_accuracy": first / n,
+        "candidate_answers": len(candidate_answers) if args.candidate_accuracy else 0,
+        "candidate_accuracy": (
+            sum(candidate_correct) / max(1, len(candidate_correct))
+            if args.candidate_accuracy
+            else float("nan")
+        ),
+        "candidate_margin": (
+            sum(candidate_margins) / max(1, len(candidate_margins))
+            if args.candidate_accuracy
+            else float("nan")
+        ),
         "exact_match": exact / n,
         "prefix_match": prefix / n,
     }
@@ -286,6 +354,9 @@ def main() -> None:
         "answer_nll",
         "answer_ppl",
         "first_token_accuracy",
+        "candidate_answers",
+        "candidate_accuracy",
+        "candidate_margin",
         "exact_match",
         "prefix_match",
         "run_dir",
@@ -301,6 +372,8 @@ def main() -> None:
             f"{method:<16} n={len(group)} "
             f"answer_nll={pm(row['answer_nll'] for row in group)} "
             f"first_tok={pm(row['first_token_accuracy'] for row in group)} "
+            f"cand_acc={pm(row['candidate_accuracy'] for row in group)} "
+            f"cand_margin={pm(row['candidate_margin'] for row in group)} "
             f"exact={pm(row['exact_match'] for row in group)} "
             f"prefix={pm(row['prefix_match'] for row in group)}"
         )
@@ -315,7 +388,10 @@ def main() -> None:
     )
     if baseline_by_seed and paired_methods:
         print("\npaired_vs_standard_lora")
-        print("method,n,answer_nll_delta,first_token_delta,exact_delta,prefix_delta,nll_better,first_better")
+        print(
+            "method,n,answer_nll_delta,first_token_delta,candidate_accuracy_delta,"
+            "candidate_margin_delta,exact_delta,prefix_delta,nll_better,candidate_better"
+        )
         for method in paired_methods:
             group = [
                 row
@@ -338,12 +414,22 @@ def main() -> None:
                 row["prefix_match"] - baseline_by_seed[row["seed"]]["prefix_match"]
                 for row in group
             ]
+            candidate_accuracy_delta = [
+                row["candidate_accuracy"] - baseline_by_seed[row["seed"]]["candidate_accuracy"]
+                for row in group
+            ]
+            candidate_margin_delta = [
+                row["candidate_margin"] - baseline_by_seed[row["seed"]]["candidate_margin"]
+                for row in group
+            ]
             nll_better = sum(delta < 0 for delta in nll_delta)
-            first_better = sum(delta > 0 for delta in first_delta)
+            candidate_better = sum(delta > 0 for delta in candidate_accuracy_delta)
             print(
                 f"{method},{len(group)},{pm(nll_delta)},"
-                f"{pm(first_delta)},{pm(exact_delta)},{pm(prefix_delta)},"
-                f"{nll_better}/{len(group)},{first_better}/{len(group)}"
+                f"{pm(first_delta)},{pm(candidate_accuracy_delta)},"
+                f"{pm(candidate_margin_delta)},{pm(exact_delta)},"
+                f"{pm(prefix_delta)},{nll_better}/{len(group)},"
+                f"{candidate_better}/{len(group)}"
             )
 
     if args.output:

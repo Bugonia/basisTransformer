@@ -14,7 +14,7 @@ FACT_NUM_HELDOUT="${FACT_NUM_HELDOUT:-128}"
 FACT_SEEN_EVAL="${FACT_SEEN_EVAL:-128}"
 FACT_TRAIN_REPEATS="${FACT_TRAIN_REPEATS:-16}"
 FACT_ANSWER_MODE="${FACT_ANSWER_MODE:-word}"
-FACT_DIR="${FACT_DIR:-$GLOBAL_DIR/data/residual_write_factoids_${FACT_ANSWER_MODE}_seed${FACT_SEED}}"
+FACT_DIR="${FACT_DIR:-$GLOBAL_DIR/data/residual_write_factoids_${FACT_ANSWER_MODE}_n${FACT_NUM_TRAIN}_r${FACT_TRAIN_REPEATS}_seed${FACT_SEED}}"
 
 if [[ ! -s "$FACT_DIR/train.txt" || ! -s "$FACT_DIR/eval_seen.jsonl" ]]; then
   "$PYTHON_BIN" aaai27_residual_write_protection/scripts/make_factoid_corpus.py \
@@ -66,4 +66,5 @@ fi
   --max-records "${FACT_EVAL_MAX_RECORDS:-0}" \
   --max-new-tokens "${FACT_MAX_NEW_TOKENS:-12}" \
   --include-base \
+  --candidate-accuracy \
   "${local_args[@]}"

@@ -163,15 +163,15 @@ export LOCAL_FILES_ONLY=1
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 
-export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_factoid_soft_r8_500step"
+export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_factoid_word32_soft_r8_1000step"
 export FACT_SEED=1
 export FACT_ANSWER_MODE=word
-export FACT_NUM_TRAIN=128
-export FACT_SEEN_EVAL=128
-export FACT_TRAIN_REPEATS=32
+export FACT_NUM_TRAIN=32
+export FACT_SEEN_EVAL=32
+export FACT_TRAIN_REPEATS=128
 
 export HARD_PROJECT=0
-export MAX_STEPS=500
+export MAX_STEPS=1000
 export EVAL_INTERVAL=100
 export EVAL_BATCHES=20
 export BATCH_SIZE=2
@@ -183,16 +183,17 @@ bash aaai27_residual_write_protection/scripts/run_factoid_pythia160m.sh
 Hard projection:
 
 ```bash
-export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_factoid_hard_r8_500step"
+export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_factoid_word32_hard_r8_1000step"
 export HARD_PROJECT=1
 bash aaai27_residual_write_protection/scripts/run_factoid_pythia160m.sh
 ```
 
 The runner writes `summary.csv` for old/new text losses and
 `fact_eval_seen.csv` for answer-level factoid metrics. The first factoid
-experiment should use `FACT_ANSWER_MODE=word`; the earlier random-code version
-is useful as a stress test, but exact generation is too hard for the first main
-signal.
+experiment should use `FACT_ANSWER_MODE=word` with a small unique answer set
+and inspect `candidate_accuracy`, because greedy exact generation can stay low
+even when the model has learned the prompt-to-answer ranking. The earlier
+random-code version is useful only as a stress test.
 
 ## Directory Map
 

@@ -44,9 +44,11 @@ Recommended first data:
   new-knowledge write pressure than weak general-domain continuation;
 - optional factual retention: CounterFact/zsRE-style prompts.
 
-Use word-label answers for the first main signal. Random code answers are a
-harder stress test, but they can make greedy exact match zero even when
-sequence loss improves.
+Use a small set of word-label answers for the first main signal, for example
+32 facts with unique answer words and many repeats. Report candidate answer
+accuracy in addition to greedy exact match. Random code answers are a harder
+stress test, but they can make greedy exact match zero even when sequence loss
+improves.
 
 The WikiText -> FineWeb-Edu setting is now treated as an engineering sanity
 check. It validates tokenization, fixed evaluation, LoRA installation, and
@@ -122,6 +124,7 @@ Adaptation:
 
 - new-domain validation loss;
 - target fact answer NLL and exact/prefix match if using factoids.
+- candidate answer accuracy over the manifest answer set.
 
 Retention:
 
