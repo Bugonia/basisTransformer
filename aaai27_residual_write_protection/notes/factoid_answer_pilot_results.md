@@ -15,6 +15,9 @@
   - `pythia160m_factoid_answer_word16_r8_1000step`
   - `pythia160m_factoid_answer_word16_random_r8_1000step`
   - `pythia160m_factoid_answer_word16_bottom_r8_1000step`
+  - `pythia160m_factoid_answer_word16_important_l0p1_r8_1000step_soft`
+  - `pythia160m_factoid_answer_word16_important_l0p3_r8_1000step_soft`
+  - `pythia160m_factoid_answer_word16_important_l3p0_r8_1000step_soft`
 
 ## Five-Seed Soft Summary
 
@@ -32,6 +35,37 @@ Paired against standard LoRA:
 | important protected soft | -1.2673 +/- 1.5278 | -0.3788 +/- 0.3769 | -0.5166 +/- 0.4468 | +0.2000 +/- 0.2355 | old 4/5, new 4/5, candidate 4/5 |
 | random protected soft | -0.1827 +/- 2.0465 | -0.1040 +/- 0.2383 | -0.2590 +/- 0.2621 | +0.0625 +/- 0.1169 | old 3/5, new 4/5, candidate 4/5 |
 | bottom protected soft | +2.8342 +/- 4.2234 | +0.0216 +/- 0.3030 | +0.0653 +/- 0.1501 | +0.0000 +/- 0.1169 | old 0/5, new 3/5, candidate 2/5 |
+
+## Important-Subspace Lambda Sweep
+
+This sweep tests whether the important-direction result is simply a generic
+regularization effect. It keeps the same protected subspace, rank, alpha,
+seeds, fact set, and answer-only objective, and changes only the soft
+protection strength.
+
+| protection lambda | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | first-token accuracy |
+|---:|---:|---:|---:|---:|---:|
+| 0.0, standard LoRA | 3.9745 +/- 1.3334 | 6.2390 +/- 0.2053 | 1.4430 +/- 0.1779 | 0.0875 +/- 0.0713 | 0.0875 +/- 0.1046 |
+| 0.1 | 5.6421 +/- 5.0411 | 6.1962 +/- 0.1475 | 1.5081 +/- 0.2855 | 0.1125 +/- 0.0523 | 0.1000 +/- 0.0342 |
+| 0.3 | 4.6073 +/- 3.6249 | 6.2644 +/- 0.2335 | 1.3291 +/- 0.1728 | 0.1125 +/- 0.0815 | 0.1500 +/- 0.1135 |
+| 1.0 | 2.7072 +/- 1.2174 | 6.6178 +/- 0.3919 | 0.9264 +/- 0.4691 | 0.2875 +/- 0.2746 | 0.3000 +/- 0.2396 |
+| 3.0 | 4.1980 +/- 2.5513 | 6.0961 +/- 0.1905 | 1.5602 +/- 0.1609 | 0.1000 +/- 0.0948 | 0.0875 +/- 0.0559 |
+
+Paired against standard LoRA:
+
+| protection lambda | old final delta | new final delta | answer NLL delta | candidate accuracy delta | better seeds |
+|---:|---:|---:|---:|---:|---|
+| 0.1 | +1.6675 +/- 5.4314 | +0.0427 +/- 0.1395 | +0.0651 +/- 0.2307 | +0.0250 +/- 0.1218 | old 3/5, new 3/5, candidate 3/5 |
+| 0.3 | +0.6327 +/- 4.1334 | -0.0254 +/- 0.3656 | -0.1139 +/- 0.2690 | +0.0250 +/- 0.1296 | old 3/5, new 3/5, candidate 2/5 |
+| 1.0 | -1.2673 +/- 1.5278 | -0.3788 +/- 0.3769 | -0.5166 +/- 0.4468 | +0.2000 +/- 0.2355 | old 4/5, new 4/5, candidate 4/5 |
+| 3.0 | +0.2235 +/- 2.5195 | +0.1428 +/- 0.0994 | +0.1172 +/- 0.2497 | +0.0125 +/- 0.1492 | old 3/5, new 0/5, candidate 2/5 |
+
+The sweep supports `lambda=1.0` as the current default. Weak protection
+(`0.1`) is too unstable and can worsen old-domain drift. Moderate protection
+(`0.3`) improves answer NLL but does not reliably protect retention. Stronger
+protection (`3.0`) suppresses new-task learning. The useful regime is therefore
+not monotone: it is a write-space interference tradeoff, with `1.0` giving the
+best pilot balance among the tested settings.
 
 ## Three-Seed Hard-Projection Reference
 
@@ -67,6 +101,13 @@ paired wins. Bottom-importance protection is the crucial negative control: it
 slightly regularizes the new objective but harms old-domain retention and does
 not improve answer ranking over standard LoRA.
 
+The lambda sweep adds a second control axis. Protecting important directions is
+not automatically beneficial at every strength: too little protection leaves the
+adapter free to collide with old write directions, while too much protection
+appears to constrain useful new-task binding. This strengthens the paper's
+framing: the method is not just "add a regularizer", but tune the write-space
+budget assigned to new adaptation.
+
 The answer-only objective also fixed the earlier full-LM confound. In the
 full-language-modeling factoid run, answer NLL improved while candidate accuracy
 stayed near chance, suggesting the model mostly learned the shared template or
@@ -81,6 +122,9 @@ entity-to-answer binding more directly.
 - The identity of the protected subspace matters: important old write
   directions outperform random directions, while bottom-importance directions
   are weak or harmful.
+- The strength of protection matters: among tested values, `lambda=1.0`
+  dominates weaker (`0.1`, `0.3`) and stronger (`3.0`) protection on the pilot
+  tradeoff.
 - The positive signal is not only old-domain retention: important protection
   also improves answer NLL, first-token accuracy, and candidate answer accuracy.
 - The answer-only objective is a better diagnostic for new factual binding than
@@ -100,10 +144,11 @@ entity-to-answer binding more directly.
 
 ## Next Runs
 
-1. Run a soft-protection lambda sweep for important subspaces, for example
-   `0.1, 0.3, 1.0, 3.0`.
-2. Repeat the best lambda at 32 facts.
-3. Add a `Pythia-410M` run once the 160M hyperparameters are stable.
+1. Repeat the best current setting, important soft protection with
+   `lambda=1.0`, at 32 facts.
+2. Run the matched 32-fact controls: standard LoRA, random protected subspace,
+   and bottom-importance protected subspace.
+3. Add a `Pythia-410M` run once the 160M 32-fact setting is stable.
 4. Consider turning on vocabulary footprint selection after the cheap controls
    settle.
 
