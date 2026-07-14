@@ -18,6 +18,7 @@
   - `pythia160m_factoid_answer_word16_important_l0p1_r8_1000step_soft`
   - `pythia160m_factoid_answer_word16_important_l0p3_r8_1000step_soft`
   - `pythia160m_factoid_answer_word16_important_l3p0_r8_1000step_soft`
+  - `pythia160m_factoid_answer_word32_important_l1p0_r8_1000step_soft`
 
 ## Five-Seed Soft Summary
 
@@ -67,6 +68,33 @@ protection (`3.0`) suppresses new-task learning. The useful regime is therefore
 not monotone: it is a write-space interference tradeoff, with `1.0` giving the
 best pilot balance among the tested settings.
 
+## 32-Fact Stress Test
+
+We repeated the current best 16-fact setting on 32 synthetic facts:
+important-subspace soft protection, `lambda=1.0`, rank 8, alpha 16, answer-only
+objective, and five seeds. This is a stress test, not yet a matched control
+sweep.
+
+| method | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | first-token accuracy |
+|---|---:|---:|---:|---:|---:|
+| standard LoRA | 4.7915 +/- 1.6626 | 6.0497 +/- 0.1617 | 1.8661 +/- 0.1713 | 0.0500 +/- 0.0280 | 0.0375 +/- 0.0140 |
+| protected soft | 5.9153 +/- 4.6300 | 6.0552 +/- 0.1209 | 1.8850 +/- 0.0934 | 0.0312 +/- 0.0221 | 0.0312 +/- 0.0000 |
+
+Paired against standard LoRA:
+
+| method | old final delta | new final delta | answer NLL delta | candidate accuracy delta | better seeds |
+|---|---:|---:|---:|---:|---|
+| important protected soft | +1.1238 +/- 5.6749 | -0.0055 +/- 0.1847 | +0.0190 +/- 0.1821 | -0.0187 +/- 0.0280 | old 3/5, new 2/5, NLL 3/5, candidate 0/5 |
+
+The 32-fact setting does not reproduce the 16-fact benefit. Both methods reduce
+answer NLL substantially relative to the base model, but candidate accuracy is
+near chance (`1/32 = 0.03125`), which means the adapters are mostly learning the
+answer distribution or local completion style rather than reliably binding each
+entity to its assigned answer. Under this load, protection is not helpful: it is
+roughly tied on new loss, worse on mean old-domain drift, and worse on candidate
+accuracy. The next step should therefore be learnability calibration, not
+running random/bottom 32-fact controls immediately.
+
 ## Three-Seed Hard-Projection Reference
 
 Hard projection was run before the 5-seed soft controls and remains useful as a
@@ -114,11 +142,17 @@ stayed near chance, suggesting the model mostly learned the shared template or
 answer prior. Masking prompt/template tokens makes the adapter learn the
 entity-to-answer binding more directly.
 
+The 32-fact stress test shows that this binding diagnostic must remain central.
+If candidate accuracy stays at chance, answer NLL alone is not enough evidence
+that the model learned the new facts. For the method paper, we should first find
+a setting where standard LoRA can learn the larger task, and then test whether
+write protection reduces old-domain drift at matched new-task learning.
+
 ## What We Can Claim Now
 
-- On Pythia-160M synthetic fact adaptation, constraining LoRA's new FFN write
-  basis away from old high-usage residual write directions improves the
-  adaptation/retention tradeoff over standard LoRA.
+- In the 16-fact Pythia-160M controlled adaptation setting, constraining LoRA's
+  new FFN write basis away from old high-usage residual write directions
+  improves the adaptation/retention tradeoff over standard LoRA.
 - The identity of the protected subspace matters: important old write
   directions outperform random directions, while bottom-importance directions
   are weak or harmful.
@@ -129,6 +163,9 @@ entity-to-answer binding more directly.
   also improves answer NLL, first-token accuracy, and candidate answer accuracy.
 - The answer-only objective is a better diagnostic for new factual binding than
   full LM loss on repeated factoid sentences.
+- The current 32-fact stress test is not yet positive: scaling the same rank-8
+  setting to 32 facts leaves candidate accuracy near chance and removes the
+  protection advantage.
 
 ## What We Cannot Claim Yet
 
@@ -136,20 +173,27 @@ entity-to-answer binding more directly.
   synthetic fact generator.
 - `SKIP_FOOTPRINT=1` means protected directions are selected by old-domain
   coefficient usage, not by vocabulary footprint or loss sensitivity.
-- Candidate accuracy is improved but still low in absolute terms. The setting is
-  useful as a controlled forgetting stress test, not yet as a strong
+- In the 16-fact setting, candidate accuracy is improved but still low in
+  absolute terms. The setting is useful as a controlled forgetting stress test,
+  not yet as a strong
   memorization benchmark.
+- The 32-fact result suggests a task-capacity bottleneck: before treating larger
+  fact sets as main evidence, we need a configuration where standard LoRA itself
+  learns entity-to-answer bindings above chance.
 - We need at least one scale-up or task-strengthening result before presenting
   this as a main method paper.
 
 ## Next Runs
 
-1. Repeat the best current setting, important soft protection with
-   `lambda=1.0`, at 32 facts.
-2. Run the matched 32-fact controls: standard LoRA, random protected subspace,
-   and bottom-importance protected subspace.
-3. Add a `Pythia-410M` run once the 160M 32-fact setting is stable.
-4. Consider turning on vocabulary footprint selection after the cheap controls
+1. Run learnability calibration before 32-fact controls: increase adaptation
+   capacity or time, e.g. rank 16 or 32, alpha scaled with rank, and/or 2000
+   steps, until standard LoRA candidate accuracy is clearly above chance.
+2. Once the 32-fact task is learnable, rerun important protection at a few
+   protection strengths around the best 16-fact value.
+3. Only then run the matched 32-fact controls: random protected subspace and
+   bottom-importance protected subspace.
+4. Add a `Pythia-410M` run once the 160M larger-fact setting is stable.
+5. Consider turning on vocabulary footprint selection after the cheap controls
    settle.
 
 The key publishable pattern is:
