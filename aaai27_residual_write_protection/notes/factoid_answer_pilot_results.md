@@ -22,6 +22,7 @@
   - `pythia160m_factoid_answer_word32_important_l1p0_r16_2000step_soft`
   - `pythia160m_factoid_answer_word32_important_l1p0_r32_lr5e4_5000step_seed1_soft`
   - `pythia160m_factoid_answer_word32_important_hard_r32_lr5e4_5000step_seed1_hard`
+  - `pythia160m_factoid_answer_word32_important_l1p0_r32_lr1e4_5000step_seed1_soft`
 
 ## Five-Seed Soft Summary
 
@@ -175,6 +176,30 @@ negative but useful result: avoiding the selected write subspace is not by
 itself sufficient for retention when the adapter is large enough to route around
 the protected directions.
 
+## 32-Fact Rank-32 Low-LR Soft Protection
+
+We then lowered the learning rate from `5e-4` to `1e-4` while keeping rank 32,
+alpha 64, 5000 steps, answer-only objective, and `lambda=1.0` soft protection.
+
+| method | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | first-token accuracy |
+|---|---:|---:|---:|---:|---:|
+| standard LoRA | 9.9466 | 7.6574 | 0.0842 | 0.8750 | 0.9062 |
+| protected soft, `lambda=1.0` | 13.4406 | 7.1198 | 0.6627 | 0.4688 | 0.3750 |
+
+Paired against standard LoRA:
+
+| method | old final delta | new final delta | answer NLL delta | candidate accuracy delta | candidate better |
+|---|---:|---:|---:|---:|---|
+| protected soft | +3.4940 | +0.5377 | +0.5784 | -0.4062 | 0/1 |
+
+This is another negative result for the current protection recipe. Lowering the
+learning rate substantially improves the standard LoRA tradeoff: it keeps high
+candidate accuracy while cutting old drift relative to the `5e-4` overfit run.
+But soft protection at `lambda=1.0` is worse on both sides: it learns the facts
+less reliably and still drifts more on the old domain. This suggests that the
+current important-subspace penalty is not simply too weak; in this regime it
+interferes with useful adaptation without providing retention.
+
 ## Three-Seed Hard-Projection Reference
 
 Hard projection was run before the 5-seed soft controls and remains useful as a
@@ -240,6 +265,10 @@ loss deteriorates more than standard LoRA. The protected subspace is therefore
 not yet capturing all old-capability-sensitive write directions, or the adapter
 can damage old behavior through coefficient-side changes and unprotected write
 directions.
+The low-learning-rate run shows that ordinary optimization choices can reduce
+drift more effectively than the current protection penalty in the 32-fact
+high-capacity regime. This weakens the case for using 32 facts as the main
+method benchmark unless the protected subspace definition is improved.
 
 ## What We Can Claim Now
 
@@ -267,6 +296,9 @@ directions.
 - Hard projection in the same rank-32 setting also reaches perfect candidate
   accuracy but worsens old-domain drift, so strict projection is not sufficient
   for retention in the current high-capacity setup.
+- At rank 32, lowering the learning rate to `1e-4` gives standard LoRA a better
+  32-fact tradeoff, while `lambda=1.0` soft protection is worse on both fact
+  binding and old-domain drift.
 
 ## What We Cannot Claim Yet
 
@@ -288,18 +320,20 @@ directions.
   old-domain drift.
 - The current important subspace is not complete enough for high-capacity hard
   projection to protect old behavior.
+- In the 32-fact high-capacity setting, current protection is not competitive
+  with a simple learning-rate change.
 - We need at least one scale-up or task-strengthening result before presenting
   this as a main method paper.
 
 ## Next Runs
 
-1. Do not expand high-capacity hard projection to five seeds yet; it is negative
-   for retention in seed 1.
-2. In the high-capacity 32-fact regime, run shorter-step or lower-learning-rate
-   sweeps to search for matched candidate accuracy with lower old-domain drift.
-3. If no high-capacity setting reduces drift at matched binding, keep 16 facts
-   as the main controlled forgetting benchmark and add a second task family
-   instead of forcing this scale-up.
+1. Do not expand the current 32-fact protection recipe to five seeds; soft and
+   hard protection are both negative for retention in seed 1.
+2. If continuing 32 facts, first improve the protected subspace definition
+   rather than only tuning `lambda`; candidates include loss-sensitivity-based
+   directions, vocabulary-footprint directions, or a larger protected basis.
+3. Otherwise, keep 16 facts as the main controlled forgetting benchmark and add
+   a second task family instead of forcing this scale-up.
 4. Add a `Pythia-410M` run once the 160M larger-fact setting or the 16-fact main
    benchmark is stable.
 5. Consider turning on vocabulary footprint selection after the cheap controls
