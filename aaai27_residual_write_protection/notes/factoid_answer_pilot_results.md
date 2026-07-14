@@ -20,6 +20,7 @@
   - `pythia160m_factoid_answer_word16_important_l3p0_r8_1000step_soft`
   - `pythia160m_factoid_answer_word32_important_l1p0_r8_1000step_soft`
   - `pythia160m_factoid_answer_word32_important_l1p0_r16_2000step_soft`
+  - `pythia160m_factoid_answer_word32_important_l1p0_r32_lr5e4_5000step_seed1_soft`
 
 ## Five-Seed Soft Summary
 
@@ -121,6 +122,31 @@ does suggest that protection can slightly reduce loss drift and answer NLL in
 some seeds, but the effect is not meaningful without reliable candidate
 binding.
 
+## 32-Fact Rank-32 Overfit Calibration
+
+We then ran a one-seed overfit search with higher capacity and learning rate:
+rank 32, alpha 64, learning rate `5e-4`, 5000 steps, answer-only objective, and
+important-subspace soft protection at `lambda=1.0`.
+
+| method | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | first-token accuracy |
+|---|---:|---:|---:|---:|---:|
+| standard LoRA | 23.9059 | 7.5723 | 0.2335 | 0.8438 | 0.8438 |
+| protected soft | 25.6896 | 7.8127 | 0.0001 | 1.0000 | 1.0000 |
+
+Paired against standard LoRA:
+
+| method | old final delta | new final delta | answer NLL delta | candidate accuracy delta | candidate better |
+|---|---:|---:|---:|---:|---|
+| important protected soft | +1.7837 | -0.2403 | -0.2334 | +0.1562 | 1/1 |
+
+This finally makes the 32-fact task learnable: standard LoRA reaches `0.8438`
+candidate accuracy, while protected LoRA reaches perfect candidate and
+first-token accuracy. However, both runs catastrophically damage the old-domain
+loss, and protected LoRA is worse on old drift in this seed. This run should be
+read as a learnability calibration, not as a retention result. It indicates that
+the 32-fact benchmark needs either an early-stopping trajectory, a protection
+strength sweep in the high-capacity regime, or both.
+
 ## Three-Seed Hard-Projection Reference
 
 Hard projection was run before the 5-seed soft controls and remains useful as a
@@ -176,6 +202,10 @@ write protection reduces old-domain drift at matched new-task learning.
 The rank-16/2000-step calibration reinforces this: more capacity and more steps
 improve losses, but still do not yield dependable answer selection among 32
 candidates.
+The rank-32/5000-step overfit run shows the other side of the tradeoff: the task
+can be learned, but not yet without large old-domain damage. In that regime,
+protection improves fact binding but does not protect retention at
+`lambda=1.0`.
 
 ## What We Can Claim Now
 
@@ -197,6 +227,9 @@ candidates.
   protection advantage.
 - Increasing the 32-fact setting to rank 16 and 2000 steps improves loss
   metrics but still leaves candidate selection close to chance.
+- A one-seed rank-32 overfit run makes 32 facts learnable, and protected LoRA
+  reaches perfect candidate accuracy, but this comes with catastrophic
+  old-domain drift.
 
 ## What We Cannot Claim Yet
 
@@ -213,18 +246,21 @@ candidates.
   learns entity-to-answer bindings above chance.
 - Answer NLL is not enough for this benchmark; candidate accuracy should remain
   the gatekeeper metric for deciding whether a factoid run is interpretable.
+- The rank-32 overfit run is not retention evidence: it needs a trajectory or
+  lambda sweep to find whether high fact binding can be achieved with lower
+  old-domain drift.
 - We need at least one scale-up or task-strengthening result before presenting
   this as a main method paper.
 
 ## Next Runs
 
-1. Do not run random/bottom 32-fact controls yet. First find a learnable
-   calibration where standard LoRA candidate accuracy is clearly above chance.
-2. Try a one-seed overfit search rather than a full five-seed suite: rank 32 or
-   64, higher learning rate, and longer training, evaluated by candidate
-   accuracy.
-3. If 32 facts remains hard, use 16 facts as the main controlled forgetting
-   benchmark and add a second task family instead of forcing this scale-up.
+1. In the high-capacity 32-fact regime, run a one-seed protection-strength sweep
+   or shorter-step sweep before any five-seed expansion.
+2. Track candidate accuracy and old drift together; the target is not maximum
+   memorization, but matched candidate accuracy with lower old-domain drift.
+3. If no protection strength reduces drift at matched binding, keep 16 facts as
+   the main controlled forgetting benchmark and add a second task family instead
+   of forcing this scale-up.
 4. Add a `Pythia-410M` run once the 160M larger-fact setting or the 16-fact main
    benchmark is stable.
 5. Consider turning on vocabulary footprint selection after the cheap controls
