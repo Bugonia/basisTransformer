@@ -19,6 +19,7 @@
   - `pythia160m_factoid_answer_word16_important_l0p3_r8_1000step_soft`
   - `pythia160m_factoid_answer_word16_important_l3p0_r8_1000step_soft`
   - `pythia160m_factoid_answer_word32_important_l1p0_r8_1000step_soft`
+  - `pythia160m_factoid_answer_word32_important_l1p0_r16_2000step_soft`
 
 ## Five-Seed Soft Summary
 
@@ -95,6 +96,31 @@ roughly tied on new loss, worse on mean old-domain drift, and worse on candidate
 accuracy. The next step should therefore be learnability calibration, not
 running random/bottom 32-fact controls immediately.
 
+## 32-Fact Rank-16 Calibration
+
+We then increased adaptation capacity and time for the 32-fact setting: rank 16,
+alpha 32, 2000 steps, answer-only objective, five seeds, and
+important-subspace soft protection at `lambda=1.0`.
+
+| method | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | first-token accuracy |
+|---|---:|---:|---:|---:|---:|
+| standard LoRA | 11.6293 +/- 9.0416 | 5.9329 +/- 0.2287 | 1.9258 +/- 0.2313 | 0.0625 +/- 0.0383 | 0.0437 +/- 0.0523 |
+| protected soft | 10.0118 +/- 6.4456 | 6.0032 +/- 0.2671 | 1.8568 +/- 0.1563 | 0.0312 +/- 0.0312 | 0.0250 +/- 0.0261 |
+
+Paired against standard LoRA:
+
+| method | old final delta | new final delta | answer NLL delta | candidate accuracy delta | better seeds |
+|---|---:|---:|---:|---:|---|
+| important protected soft | -1.6175 +/- 4.5251 | -0.0704 +/- 0.2240 | -0.0690 +/- 0.2576 | -0.0312 +/- 0.0541 | old 3/5, new 3/5, NLL 3/5, candidate 0/5 |
+
+The rank-16 calibration improves some loss metrics but still does not solve
+binding. Standard LoRA reaches only `0.0625` candidate accuracy, while protected
+LoRA is at chance. Since both numbers are close to the `1/32` random baseline,
+this setting is still not suitable as main evidence for write protection. It
+does suggest that protection can slightly reduce loss drift and answer NLL in
+some seeds, but the effect is not meaningful without reliable candidate
+binding.
+
 ## Three-Seed Hard-Projection Reference
 
 Hard projection was run before the 5-seed soft controls and remains useful as a
@@ -147,6 +173,9 @@ If candidate accuracy stays at chance, answer NLL alone is not enough evidence
 that the model learned the new facts. For the method paper, we should first find
 a setting where standard LoRA can learn the larger task, and then test whether
 write protection reduces old-domain drift at matched new-task learning.
+The rank-16/2000-step calibration reinforces this: more capacity and more steps
+improve losses, but still do not yield dependable answer selection among 32
+candidates.
 
 ## What We Can Claim Now
 
@@ -166,6 +195,8 @@ write protection reduces old-domain drift at matched new-task learning.
 - The current 32-fact stress test is not yet positive: scaling the same rank-8
   setting to 32 facts leaves candidate accuracy near chance and removes the
   protection advantage.
+- Increasing the 32-fact setting to rank 16 and 2000 steps improves loss
+  metrics but still leaves candidate selection close to chance.
 
 ## What We Cannot Claim Yet
 
@@ -180,19 +211,22 @@ write protection reduces old-domain drift at matched new-task learning.
 - The 32-fact result suggests a task-capacity bottleneck: before treating larger
   fact sets as main evidence, we need a configuration where standard LoRA itself
   learns entity-to-answer bindings above chance.
+- Answer NLL is not enough for this benchmark; candidate accuracy should remain
+  the gatekeeper metric for deciding whether a factoid run is interpretable.
 - We need at least one scale-up or task-strengthening result before presenting
   this as a main method paper.
 
 ## Next Runs
 
-1. Run learnability calibration before 32-fact controls: increase adaptation
-   capacity or time, e.g. rank 16 or 32, alpha scaled with rank, and/or 2000
-   steps, until standard LoRA candidate accuracy is clearly above chance.
-2. Once the 32-fact task is learnable, rerun important protection at a few
-   protection strengths around the best 16-fact value.
-3. Only then run the matched 32-fact controls: random protected subspace and
-   bottom-importance protected subspace.
-4. Add a `Pythia-410M` run once the 160M larger-fact setting is stable.
+1. Do not run random/bottom 32-fact controls yet. First find a learnable
+   calibration where standard LoRA candidate accuracy is clearly above chance.
+2. Try a one-seed overfit search rather than a full five-seed suite: rank 32 or
+   64, higher learning rate, and longer training, evaluated by candidate
+   accuracy.
+3. If 32 facts remains hard, use 16 facts as the main controlled forgetting
+   benchmark and add a second task family instead of forcing this scale-up.
+4. Add a `Pythia-410M` run once the 160M larger-fact setting or the 16-fact main
+   benchmark is stable.
 5. Consider turning on vocabulary footprint selection after the cheap controls
    settle.
 
