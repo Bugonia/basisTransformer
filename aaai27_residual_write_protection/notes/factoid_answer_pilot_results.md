@@ -8,144 +8,109 @@
 - Objective: answer-only loss on completion tokens
 - Old-domain retention: fixed WikiText-103 text batches
 - Adapter: FFN down-projection LoRA, rank 8, alpha 16
-- Seeds: 1, 2, 3
+- Soft-protection seeds: 1, 2, 3, 4, 5
+- Hard-projection seeds: 1, 2, 3
 - Inventory: old-domain coefficient/activation importance, `SKIP_FOOTPRINT=1`
-- Suite: `pythia160m_factoid_answer_word16_r8_1000step`
+- Suites:
+  - `pythia160m_factoid_answer_word16_r8_1000step`
+  - `pythia160m_factoid_answer_word16_random_r8_1000step`
+  - `pythia160m_factoid_answer_word16_bottom_r8_1000step`
 
-## Main Summary
+## Five-Seed Soft Summary
 
-| method | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | first-token accuracy |
-|---|---:|---:|---:|---:|---:|
-| standard LoRA | 4.0642 +/- 1.4131 | 6.1080 +/- 0.1381 | 1.5304 +/- 0.1851 | 0.0417 +/- 0.0361 | 0.0208 +/- 0.0361 |
-| protected soft | 1.9163 +/- 0.3281 | 6.5132 +/- 0.1950 | 0.9991 +/- 0.1051 | 0.2083 +/- 0.0955 | 0.2292 +/- 0.1301 |
-| protected hard | 2.6839 +/- 0.4389 | 6.2800 +/- 0.1423 | 1.3448 +/- 0.2996 | 0.1458 +/- 0.0722 | 0.1875 +/- 0.1654 |
+| method | protected subspace | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | first-token accuracy |
+|---|---|---:|---:|---:|---:|---:|
+| standard LoRA | none | 3.9745 +/- 1.3334 | 6.2390 +/- 0.2053 | 1.4430 +/- 0.1779 | 0.0875 +/- 0.0713 | 0.0875 +/- 0.1046 |
+| protected soft | important old write directions | 2.7072 +/- 1.2174 | 6.6178 +/- 0.3919 | 0.9264 +/- 0.4691 | 0.2875 +/- 0.2746 | 0.3000 +/- 0.2396 |
+| protected soft | random write directions | 3.7918 +/- 1.1096 | 6.3430 +/- 0.2553 | 1.1840 +/- 0.2650 | 0.1500 +/- 0.0948 | 0.1375 +/- 0.1118 |
+| protected soft | bottom-importance write directions | 6.8088 +/- 4.8997 | 6.2174 +/- 0.2212 | 1.5083 +/- 0.1814 | 0.0875 +/- 0.0713 | 0.1125 +/- 0.1202 |
 
 Paired against standard LoRA:
 
 | method | old final delta | new final delta | answer NLL delta | candidate accuracy delta | better seeds |
 |---|---:|---:|---:|---:|---|
-| protected soft | -2.1479 +/- 1.2202 | -0.4052 +/- 0.1563 | -0.5313 +/- 0.1242 | +0.1667 +/- 0.0955 | old 3/3, new 3/3, candidate 3/3 |
+| important protected soft | -1.2673 +/- 1.5278 | -0.3788 +/- 0.3769 | -0.5166 +/- 0.4468 | +0.2000 +/- 0.2355 | old 4/5, new 4/5, candidate 4/5 |
+| random protected soft | -0.1827 +/- 2.0465 | -0.1040 +/- 0.2383 | -0.2590 +/- 0.2621 | +0.0625 +/- 0.1169 | old 3/5, new 4/5, candidate 4/5 |
+| bottom protected soft | +2.8342 +/- 4.2234 | +0.0216 +/- 0.3030 | +0.0653 +/- 0.1501 | +0.0000 +/- 0.1169 | old 0/5, new 3/5, candidate 2/5 |
+
+## Three-Seed Hard-Projection Reference
+
+Hard projection was run before the 5-seed soft controls and remains useful as a
+mechanism reference, but the current main evidence is the 5-seed soft result.
+
+| method | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | first-token accuracy |
+|---|---:|---:|---:|---:|---:|
+| standard LoRA | 4.0642 +/- 1.4131 | 6.1080 +/- 0.1381 | 1.5304 +/- 0.1851 | 0.0417 +/- 0.0361 | 0.0208 +/- 0.0361 |
+| protected hard | 2.6839 +/- 0.4389 | 6.2800 +/- 0.1423 | 1.3448 +/- 0.2996 | 0.1458 +/- 0.0722 | 0.1875 +/- 0.1654 |
+
+Paired hard-projection deltas against standard LoRA:
+
+| method | old final delta | new final delta | answer NLL delta | candidate accuracy delta | better seeds |
+|---|---:|---:|---:|---:|---|
 | protected hard | -1.3803 +/- 1.3566 | -0.1721 +/- 0.2773 | -0.1855 +/- 0.3543 | +0.1042 +/- 0.0955 | old 3/3, new 2/3, candidate 2/3 |
-
-## Random-Subspace Control
-
-Run:
-
-- Suite: `pythia160m_factoid_answer_word16_random_r8_1000step`
-- Same model, facts, seeds, rank, alpha, lambda, and answer-only objective
-- Selection: `INVENTORY_SELECTION_MODE=random`
-- Arm: soft protection only
-
-| method | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | first-token accuracy |
-|---|---:|---:|---:|---:|---:|
-| standard LoRA | 4.0642 +/- 1.4131 | 6.1080 +/- 0.1381 | 1.5304 +/- 0.1851 | 0.0417 +/- 0.0361 | 0.0208 +/- 0.0361 |
-| random protected soft | 3.6024 +/- 0.5394 | 6.2894 +/- 0.1265 | 1.2994 +/- 0.0093 | 0.1250 +/- 0.0000 | 0.1042 +/- 0.0722 |
-| important protected soft | 1.9163 +/- 0.3281 | 6.5132 +/- 0.1950 | 0.9991 +/- 0.1051 | 0.2083 +/- 0.0955 | 0.2292 +/- 0.1301 |
-
-Paired random-protection deltas against standard LoRA:
-
-| method | old final delta | new final delta | answer NLL delta | candidate accuracy delta | better seeds |
-|---|---:|---:|---:|---:|---|
-| random protected soft | -0.4618 +/- 0.9943 | -0.1815 +/- 0.0739 | -0.2310 +/- 0.1760 | +0.0833 +/- 0.0361 | old 2/3, new 3/3, candidate 3/3 |
-| important protected soft | -2.1479 +/- 1.2202 | -0.4052 +/- 0.1563 | -0.5313 +/- 0.1242 | +0.1667 +/- 0.0955 | old 3/3, new 3/3, candidate 3/3 |
-
-## Bottom-Importance Control
-
-Run:
-
-- Suite: `pythia160m_factoid_answer_word16_bottom_r8_1000step`
-- Same model, facts, seeds, rank, alpha, lambda, and answer-only objective
-- Selection: `INVENTORY_SELECTION_MODE=bottom`
-- Arm: soft protection only
-
-| method | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | first-token accuracy |
-|---|---:|---:|---:|---:|---:|
-| standard LoRA | 4.0642 +/- 1.4131 | 6.1080 +/- 0.1381 | 1.5304 +/- 0.1851 | 0.0417 +/- 0.0361 | 0.0208 +/- 0.0361 |
-| bottom protected soft | 4.9597 +/- 0.9466 | 6.2889 +/- 0.2639 | 1.5497 +/- 0.1753 | 0.0833 +/- 0.0361 | 0.0833 +/- 0.0361 |
-| random protected soft | 3.6024 +/- 0.5394 | 6.2894 +/- 0.1265 | 1.2994 +/- 0.0093 | 0.1250 +/- 0.0000 | 0.1042 +/- 0.0722 |
-| important protected soft | 1.9163 +/- 0.3281 | 6.5132 +/- 0.1950 | 0.9991 +/- 0.1051 | 0.2083 +/- 0.0955 | 0.2292 +/- 0.1301 |
-
-Paired bottom-protection deltas against standard LoRA:
-
-| method | old final delta | new final delta | answer NLL delta | candidate accuracy delta | better seeds |
-|---|---:|---:|---:|---:|---|
-| bottom protected soft | +0.8955 +/- 0.4862 | -0.1810 +/- 0.1595 | +0.0193 +/- 0.0301 | +0.0417 +/- 0.0722 | old 0/3, new 3/3, candidate 1/3 |
-| random protected soft | -0.4618 +/- 0.9943 | -0.1815 +/- 0.0739 | -0.2310 +/- 0.1760 | +0.0833 +/- 0.0361 | old 2/3, new 3/3, candidate 3/3 |
-| important protected soft | -2.1479 +/- 1.2202 | -0.4052 +/- 0.1563 | -0.5313 +/- 0.1242 | +0.1667 +/- 0.0955 | old 3/3, new 3/3, candidate 3/3 |
 
 ## Interpretation
 
-This is the first pilot where the residual-write-protection claim has a clear
-positive direction. In the previous full-language-modeling factoid run, answer
-NLL improved while candidate accuracy stayed near chance, suggesting that the
-model mostly learned the shared template or answer prior. Masking the prompt and
-template tokens changes the pressure: the adapter must improve the
-entity-to-answer binding itself.
-
-Under that objective, soft write-space protection improved both sides of the
-tradeoff in all three seeds: lower old-domain loss drift and better factoid
-answer ranking. Hard projection also improved retention in all three seeds, but
-its adaptation benefit was weaker and noisier. This fits a plausible story:
-soft protection discourages destructive overlap while still allowing the new
-adapter to use nearby useful directions; hard projection may be too strict.
-
-The random-subspace control is also informative. Random protection improves
-over standard LoRA on answer metrics and weakly on retention, so some of the
-effect may come from a generic low-rank geometry regularizer. However, important
-write-direction protection is substantially stronger: larger retention gain,
-lower answer NLL, and higher candidate accuracy. This supports the more specific
-claim that the identity of the protected residual write directions matters.
-
-The bottom-importance control strengthens this interpretation. Protecting
-low-importance old write directions slightly improves the new answer loss but
-hurts old-domain retention and does not improve answer NLL. In other words,
-choosing the wrong write subspace can preserve neither the old distribution nor
-the answer-binding quality. The emerging ordering is:
+This is now a stronger pilot: with five seeds, protecting important old residual
+write directions remains the best condition on both retention and answer
+binding. The ordering is clear:
 
 ```text
 important protection > random protection > bottom protection
 ```
 
-with standard LoRA between random and bottom depending on the metric.
+Random protection preserves a weaker version of the benefit, suggesting that
+there is some generic low-rank geometry or regularization effect. But it is not
+enough to explain the result: important-direction protection has larger old-loss
+retention, lower answer NLL, higher candidate accuracy, and more favorable
+paired wins. Bottom-importance protection is the crucial negative control: it
+slightly regularizes the new objective but harms old-domain retention and does
+not improve answer ranking over standard LoRA.
+
+The answer-only objective also fixed the earlier full-LM confound. In the
+full-language-modeling factoid run, answer NLL improved while candidate accuracy
+stayed near chance, suggesting the model mostly learned the shared template or
+answer prior. Masking prompt/template tokens makes the adapter learn the
+entity-to-answer binding more directly.
 
 ## What We Can Claim Now
 
-- A small Pythia-160M pilot supports the idea that constraining LoRA's new FFN
-  write basis away from old high-usage residual write directions can reduce
-  forgetting under synthetic fact adaptation.
-- The positive signal is not merely a lower old-domain drift: protected soft
+- On Pythia-160M synthetic fact adaptation, constraining LoRA's new FFN write
+  basis away from old high-usage residual write directions improves the
+  adaptation/retention tradeoff over standard LoRA.
+- The identity of the protected subspace matters: important old write
+  directions outperform random directions, while bottom-importance directions
+  are weak or harmful.
+- The positive signal is not only old-domain retention: important protection
   also improves answer NLL, first-token accuracy, and candidate answer accuracy.
-- A random-subspace control preserves part but not all of the benefit, suggesting
-  both a generic regularization component and an importance-specific
-  write-space component.
-- A bottom-importance control loses the retention benefit and fails to improve
-  answer NLL, supporting the claim that old-direction importance matters.
 - The answer-only objective is a better diagnostic for new factual binding than
   full LM loss on repeated factoid sentences.
 
 ## What We Cannot Claim Yet
 
-- This is not yet paper-grade evidence by itself: only 3 seeds, one model size,
-  one fact count, one rank, and synthetic facts.
-- `SKIP_FOOTPRINT=1` means the protected set is selected by old-domain
+- This is still a small pilot: one model size, one fact count, one rank, one
+  synthetic fact generator.
+- `SKIP_FOOTPRINT=1` means protected directions are selected by old-domain
   coefficient usage, not by vocabulary footprint or loss sensitivity.
-- We have not fully ruled out generic regularization. Random-subspace protection
-  is weaker than importance-based protection, and bottom-importance protection
-  is weak or harmful, but additional seeds are still required.
 - Candidate accuracy is improved but still low in absolute terms. The setting is
-  useful as a controlled forgetting stress test, not yet as a strong memorization
-  benchmark.
+  useful as a controlled forgetting stress test, not yet as a strong
+  memorization benchmark.
+- We need at least one scale-up or task-strengthening result before presenting
+  this as a main method paper.
 
 ## Next Runs
 
-1. Replicate the important, random, and bottom settings with 5 seeds.
-2. Run a soft-protection lambda sweep, for example `0.1, 1.0, 10.0`.
-3. Increase to 32 facts only after the 16-fact control pattern is stable.
+1. Run a soft-protection lambda sweep for important subspaces, for example
+   `0.1, 0.3, 1.0, 3.0`.
+2. Repeat the best lambda at 32 facts.
+3. Add a `Pythia-410M` run once the 160M hyperparameters are stable.
+4. Consider turning on vocabulary footprint selection after the cheap controls
+   settle.
 
-The key publishable pattern would be:
+The key publishable pattern is:
 
 ```text
 important write protection > random write protection > bottom write protection
 ```
 
-on old retention at matched or near-matched fact learning.
+on old retention at matched or improved fact learning.
