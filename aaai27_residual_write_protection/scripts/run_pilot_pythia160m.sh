@@ -47,7 +47,7 @@ echo "rank/alpha: $RANK/$ALPHA"
 echo "tokens: inventory=${INVENTORY_MAX_TOKENS:-131072} train=${MAX_TRAIN_TOKENS:-2000000} eval=${MAX_EVAL_TOKENS:-262144}"
 echo "train: steps=${MAX_STEPS:-1000} batch=${BATCH_SIZE:-4} block=${BLOCK_SIZE:-512} lr=${LEARNING_RATE:-2e-4}"
 echo "eval: interval=${EVAL_INTERVAL:-100} batches=${EVAL_BATCHES:-20} seed=${EVAL_SEED:-1234}"
-echo "protection: lambda=$PROTECT_LAMBDA hard_project=${HARD_PROJECT:-0} skip_footprint=${SKIP_FOOTPRINT:-0}"
+echo "protection: lambda=$PROTECT_LAMBDA hard_project=${HARD_PROJECT:-0} skip_footprint=${SKIP_FOOTPRINT:-0} selection=${INVENTORY_SELECTION_MODE:-importance}"
 
 if [[ ! -s "$BASE_OUT/inventory/protected_subspaces.pt" ]]; then
   "$PYTHON_BIN" aaai27_residual_write_protection/scripts/write_basis_inventory.py \
@@ -63,6 +63,8 @@ if [[ ! -s "$BASE_OUT/inventory/protected_subspaces.pt" ]]; then
     --batch-size "${BATCH_SIZE:-4}" \
     --footprint-chunk-size "${FOOTPRINT_CHUNK_SIZE:-128}" \
     --top-k-per-layer "${TOP_K_PER_LAYER:-64}" \
+    --selection-mode "${INVENTORY_SELECTION_MODE:-importance}" \
+    --selection-seed "${INVENTORY_SELECTION_SEED:-1}" \
     "${footprint_args[@]}" \
     "${local_args[@]}"
 fi

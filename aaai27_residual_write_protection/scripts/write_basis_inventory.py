@@ -62,6 +62,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--block-size", type=int, default=512)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--top-k-per-layer", type=int, default=64)
+    parser.add_argument(
+        "--selection-mode",
+        choices=("importance", "random", "bottom"),
+        default="importance",
+        help="How to choose protected basis directions within each FFN output module.",
+    )
+    parser.add_argument(
+        "--selection-seed",
+        type=int,
+        default=1,
+        help="Seed used when selection-mode=random.",
+    )
     parser.add_argument("--activation-threshold", type=float, default=0.01)
     parser.add_argument("--footprint-chunk-size", type=int, default=128)
     parser.add_argument(
@@ -340,6 +352,8 @@ def main() -> None:
     protected: Dict[str, object] = {
         "model_id": args.model_id,
         "top_k_per_layer": args.top_k_per_layer,
+        "selection_mode": args.selection_mode,
+        "selection_seed": args.selection_seed,
         "subspaces": {},
         "module_names": [],
     }
@@ -350,11 +364,13 @@ def main() -> None:
         "block_size": args.block_size,
         "batch_size": args.batch_size,
         "top_k_per_layer": args.top_k_per_layer,
+        "selection_mode": args.selection_mode,
+        "selection_seed": args.selection_seed,
         "activation_threshold": args.activation_threshold,
         "modules": [],
     }
 
-    for name, module in modules:
+    for module_position, (name, module) in enumerate(modules):
         st = stats[name]
         directions = basis_matrix(torch, module)
         direction_norm = directions.norm(dim=1)
@@ -380,7 +396,14 @@ def main() -> None:
 
         importance = mean_abs * footprint_norm
         k = min(args.top_k_per_layer, st.n_basis)
-        top_indices = torch.topk(importance, k=k).indices.tolist()
+        if args.selection_mode == "random":
+            generator = torch.Generator(device="cpu")
+            generator.manual_seed(args.selection_seed + module_position)
+            top_indices = torch.randperm(st.n_basis, generator=generator)[:k].tolist()
+        elif args.selection_mode == "bottom":
+            top_indices = torch.topk(importance, k=k, largest=False).indices.tolist()
+        else:
+            top_indices = torch.topk(importance, k=k).indices.tolist()
         protected["subspaces"][name] = qr_subspace(torch, directions, top_indices)
         protected["module_names"].append(name)
         summary["modules"].append(

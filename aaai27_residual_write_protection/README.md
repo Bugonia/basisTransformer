@@ -213,11 +213,19 @@ old-domain text perplexity as the retention metric. It is the preferred path
 for testing whether write-space protection helps new factual binding without
 unnecessary old-domain drift.
 
+After an important-direction run shows a signal, run the same command with
+`INVENTORY_SELECTION_MODE=random` and then `INVENTORY_SELECTION_MODE=bottom` in
+fresh `SUITE_NAME`s. These controls test whether the gain comes from protecting
+old important residual write directions, rather than from a generic low-rank
+regularization effect.
+
 ## Directory Map
 
 - `protocols/pilot_protocol.md`: first experimental protocol.
 - `notes/literature_radar.md`: positioning against continual PEFT work.
 - `scripts/write_basis_inventory.py`: compute FFN write-direction importance.
+  It can also export random or bottom-importance subspaces for control runs via
+  `--selection-mode`.
 - `scripts/train_write_protected_lora.py`: lightweight LoRA training with a
   write-subspace penalty.
 - `scripts/train_factoid_write_protected_lora.py`: factoid answer-only LoRA
