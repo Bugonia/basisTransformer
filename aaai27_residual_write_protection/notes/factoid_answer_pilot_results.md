@@ -25,6 +25,7 @@
   - `pythia160m_factoid_answer_word32_important_hard_r32_lr5e4_5000step_seed1_hard`
   - `pythia160m_factoid_answer_word32_important_l1p0_r32_lr1e4_5000step_seed1_soft`
   - `pythia410m_factoid_answer_word16_important_l1p0_r8_1000step_soft`
+  - `pythia410m_factoid_answer_word16_bottom_l1p0_r8_1000step_soft`
 
 ## Five-Seed Soft Summary
 
@@ -67,6 +68,32 @@ protected LoRA slightly lowers mean old-domain drift, improves answer NLL in all
 five seeds, and increases candidate margin. This supports non-degradation and
 some robustness of the write-protection idea at a larger model size, but it does
 not by itself establish a stronger adaptation/retention tradeoff.
+
+## Pythia-410M 16-Fact Bottom Control
+
+The bottom-importance 410M control uses the same 16-fact setup but protects the
+lowest-scoring old-domain directions instead of the important directions. The
+attached output included the bottom control; the random-control summary was not
+present in that attachment.
+
+| method | protected subspace | old loss drift | answer NLL | candidate accuracy | candidate margin |
+|---|---|---:|---:|---:|---:|
+| standard LoRA | none | 0.6510 +/- 0.1420 | 0.0008 +/- 0.0001 | 1.0000 +/- 0.0000 | 2.6476 +/- 0.0670 |
+| protected soft | important old directions | 0.6027 +/- 0.0549 | 0.0005 +/- 0.0001 | 1.0000 +/- 0.0000 | 2.8082 +/- 0.0992 |
+| protected soft | bottom old directions | 0.6629 +/- 0.1550 | 0.0005 +/- 0.0001 | 1.0000 +/- 0.0000 | 2.7835 +/- 0.0404 |
+
+Paired bottom-control deltas against standard LoRA:
+
+| method | old final delta | new final delta | answer NLL delta | candidate margin delta | better seeds |
+|---|---:|---:|---:|---:|---|
+| bottom protected soft | +0.0120 +/- 0.2507 | -0.0002 +/- 0.0001 | -0.0003 +/- 0.0001 | +0.1359 +/- 0.0770 | old 3/5, new 5/5, NLL 5/5 |
+
+Because 410M saturates candidate accuracy, the control mainly compares
+old-domain drift and candidate margin. Important protection remains slightly
+better than bottom protection on both metrics: lower old drift (`0.6027` vs
+`0.6629`) and larger margin improvement (`+0.1607` vs `+0.1359`). The gap is
+small, so this should be presented as weak supporting evidence rather than a
+standalone result.
 
 ## Important-Subspace Lambda Sweep
 
@@ -267,6 +294,10 @@ size, and it slightly improves old drift, answer NLL, and candidate margin.
 However, because both methods reach perfect candidate accuracy, the 410M 16-fact
 setting is better treated as a scale sanity check than as the main discriminative
 benchmark.
+The bottom-direction 410M control is also saturated, but it weakly supports the
+importance ranking: bottom protection improves answer NLL and margin over
+standard LoRA, yet has worse old drift and a smaller margin gain than important
+protection.
 
 The lambda sweep adds a second control axis. Protecting important directions is
 not automatically beneficial at every strength: too little protection leaves the
@@ -322,6 +353,9 @@ method benchmark unless the protected subspace definition is improved.
 - A 16-fact Pythia-410M scale check is consistent with the method: protected
   LoRA slightly reduces mean old drift and improves answer NLL and candidate
   margin, while both methods reach perfect candidate accuracy.
+- In the Pythia-410M 16-fact bottom control, bottom protection is weaker than
+  important protection on old drift and candidate margin, but the gap is small
+  because the task is saturated.
 - The current 32-fact stress test is not yet positive: scaling the same rank-8
   setting to 32 facts leaves candidate accuracy near chance and removes the
   protection advantage.
@@ -349,6 +383,8 @@ method benchmark unless the protected subspace definition is improved.
   memorization benchmark.
 - In the 410M 16-fact setting, candidate accuracy saturates for both methods, so
   it is not a strong discriminative benchmark.
+- The 410M random control still needs to be collected before claiming a full
+  important/random/bottom ordering at this scale.
 - The 32-fact result suggests a task-capacity bottleneck: before treating larger
   fact sets as main evidence, we need a configuration where standard LoRA itself
   learns entity-to-answer bindings above chance.
@@ -373,9 +409,8 @@ method benchmark unless the protected subspace definition is improved.
    directions, vocabulary-footprint directions, or a larger protected basis.
 3. Otherwise, keep 16 facts as the main controlled forgetting benchmark and add
    a second task family instead of forcing this scale-up.
-4. For scale evidence, run Pythia-410M random and bottom 16-fact controls only
-   if old-drift and margin comparisons remain useful despite candidate-accuracy
-   saturation.
+4. For scale evidence, collect the missing Pythia-410M random 16-fact control
+   before using the 410M controls in the paper.
 5. Consider turning on vocabulary footprint selection after the cheap controls
    settle.
 
