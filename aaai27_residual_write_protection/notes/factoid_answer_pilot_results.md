@@ -21,6 +21,7 @@
   - `pythia160m_factoid_answer_word32_important_l1p0_r8_1000step_soft`
   - `pythia160m_factoid_answer_word32_important_l1p0_r16_2000step_soft`
   - `pythia160m_factoid_answer_word32_important_l1p0_r32_lr5e4_5000step_seed1_soft`
+  - `pythia160m_factoid_answer_word32_important_hard_r32_lr5e4_5000step_seed1_hard`
 
 ## Five-Seed Soft Summary
 
@@ -147,6 +148,33 @@ read as a learnability calibration, not as a retention result. It indicates that
 the 32-fact benchmark needs either an early-stopping trajectory, a protection
 strength sweep in the high-capacity regime, or both.
 
+## 32-Fact Rank-32 Hard Projection
+
+We next ran the same high-capacity one-seed setting with hard projection:
+rank 32, alpha 64, learning rate `5e-4`, 5000 steps, answer-only objective, and
+hard projection of the LoRA write matrix away from the important old write
+subspace after each optimizer step.
+
+| method | old loss drift | new answer-loss gain | answer NLL | candidate accuracy | first-token accuracy |
+|---|---:|---:|---:|---:|---:|
+| standard LoRA | 23.9059 | 7.5723 | 0.2335 | 0.8438 | 0.8438 |
+| protected soft, `lambda=1.0` | 25.6896 | 7.8127 | 0.0001 | 1.0000 | 1.0000 |
+| protected hard | 34.8167 | 7.8126 | 0.0001 | 1.0000 | 1.0000 |
+
+Paired against standard LoRA:
+
+| method | old final delta | new final delta | answer NLL delta | candidate accuracy delta | candidate better |
+|---|---:|---:|---:|---:|---|
+| protected hard | +10.9108 | -0.2403 | -0.2334 | +0.1562 | 1/1 |
+
+Hard projection confirms that a LoRA update can learn the 32 facts while staying
+orthogonal to the selected important write subspace. But it does not protect
+old-domain loss in this high-capacity setting; it is substantially worse than
+standard LoRA on old drift and worse than the soft-protected run. This is a
+negative but useful result: avoiding the selected write subspace is not by
+itself sufficient for retention when the adapter is large enough to route around
+the protected directions.
+
 ## Three-Seed Hard-Projection Reference
 
 Hard projection was run before the 5-seed soft controls and remains useful as a
@@ -206,6 +234,12 @@ The rank-32/5000-step overfit run shows the other side of the tradeoff: the task
 can be learned, but not yet without large old-domain damage. In that regime,
 protection improves fact binding but does not protect retention at
 `lambda=1.0`.
+The high-capacity hard-projection run is even sharper: strict orthogonality to
+the selected old write subspace still permits perfect fact binding, but old
+loss deteriorates more than standard LoRA. The protected subspace is therefore
+not yet capturing all old-capability-sensitive write directions, or the adapter
+can damage old behavior through coefficient-side changes and unprotected write
+directions.
 
 ## What We Can Claim Now
 
@@ -230,6 +264,9 @@ protection improves fact binding but does not protect retention at
 - A one-seed rank-32 overfit run makes 32 facts learnable, and protected LoRA
   reaches perfect candidate accuracy, but this comes with catastrophic
   old-domain drift.
+- Hard projection in the same rank-32 setting also reaches perfect candidate
+  accuracy but worsens old-domain drift, so strict projection is not sufficient
+  for retention in the current high-capacity setup.
 
 ## What We Cannot Claim Yet
 
@@ -249,18 +286,20 @@ protection improves fact binding but does not protect retention at
 - The rank-32 overfit run is not retention evidence: it needs a trajectory or
   lambda sweep to find whether high fact binding can be achieved with lower
   old-domain drift.
+- The current important subspace is not complete enough for high-capacity hard
+  projection to protect old behavior.
 - We need at least one scale-up or task-strengthening result before presenting
   this as a main method paper.
 
 ## Next Runs
 
-1. In the high-capacity 32-fact regime, run a one-seed protection-strength sweep
-   or shorter-step sweep before any five-seed expansion.
-2. Track candidate accuracy and old drift together; the target is not maximum
-   memorization, but matched candidate accuracy with lower old-domain drift.
-3. If no protection strength reduces drift at matched binding, keep 16 facts as
-   the main controlled forgetting benchmark and add a second task family instead
-   of forcing this scale-up.
+1. Do not expand high-capacity hard projection to five seeds yet; it is negative
+   for retention in seed 1.
+2. In the high-capacity 32-fact regime, run shorter-step or lower-learning-rate
+   sweeps to search for matched candidate accuracy with lower old-domain drift.
+3. If no high-capacity setting reduces drift at matched binding, keep 16 facts
+   as the main controlled forgetting benchmark and add a second task family
+   instead of forcing this scale-up.
 4. Add a `Pythia-410M` run once the 160M larger-fact setting or the 16-fact main
    benchmark is stable.
 5. Consider turning on vocabulary footprint selection after the cheap controls
