@@ -150,7 +150,8 @@ The WikiText -> FineWeb-Edu run is only an engineering sanity check. The current
 main experiment uses synthetic factoids as the new adaptation task, so the
 paper can measure new knowledge write-in and old-domain retention together.
 
-Soft protection:
+Run the next factoid suite with one command. It runs soft protection as a
+tradeoff ablation and hard projection as the clean mechanism test:
 
 ```bash
 source /inspire/hdd/global_user/zhongxiaoqiu-253108120179/basis_env.sh
@@ -163,29 +164,20 @@ export LOCAL_FILES_ONLY=1
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 
-export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_factoid_word32_soft_r8_1000step"
+export SUITE_NAME="pythia160m_factoid_word32_r8_1000step"
 export FACT_SEED=1
 export FACT_ANSWER_MODE=word
 export FACT_NUM_TRAIN=32
 export FACT_SEEN_EVAL=32
 export FACT_TRAIN_REPEATS=128
 
-export HARD_PROJECT=0
 export MAX_STEPS=1000
 export EVAL_INTERVAL=100
 export EVAL_BATCHES=20
 export BATCH_SIZE=2
 export SEEDS="1 2 3"
 
-bash aaai27_residual_write_protection/scripts/run_factoid_pythia160m.sh
-```
-
-Hard projection:
-
-```bash
-export BASE_OUT="aaai27_residual_write_protection/results/pythia160m_factoid_word32_hard_r8_1000step"
-export HARD_PROJECT=1
-bash aaai27_residual_write_protection/scripts/run_factoid_pythia160m.sh
+bash aaai27_residual_write_protection/scripts/run_factoid_suite_pythia160m.sh
 ```
 
 The runner writes `summary.csv` for old/new text losses and
@@ -205,4 +197,6 @@ random-code version is useful only as a stress test.
 - `scripts/make_factoid_corpus.py`: generate controlled new-knowledge facts.
 - `scripts/eval_factoid_lora.py`: evaluate saved LoRA adapters on fact prompts.
 - `scripts/run_factoid_pythia160m.sh`: end-to-end factoid pilot runner.
+- `scripts/run_factoid_suite_pythia160m.sh`: run soft and hard factoid pilots
+  as one reproducible suite.
 - `configs/pilot_pythia160m.json`: editable starter config.
